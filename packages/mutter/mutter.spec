@@ -40,6 +40,7 @@ Patch0108:      0009-backend-native-Define-CastKMS-grant-profiles.patch
 Patch0109:      0010-backend-native-Broker-CastKMS-capture-grants.patch
 Patch0110:      0011-backend-native-Use-the-Pronk-project-bus-name.patch
 Patch0111:      0012-tests-native-Exercise-CastKMS-grant-contracts.patch
+Patch0112:      0013-docs-Identify-the-Pronk-integration-branch.patch
 
 %gnome_check_version
 
