@@ -13,7 +13,7 @@ test $# -ge 1 && test $# -le 2 || usage
 
 package=$1
 output_dir=${2:-$PWD}
-repository_root=$(CDPATH= cd -- "$(dirname "$0")/.." && pwd)
+repository_root=$(CDPATH='' cd -- "$(dirname "$0")/.." && pwd)
 spec=$repository_root/packages/$package/$package.spec
 test -f "$spec" || usage
 
