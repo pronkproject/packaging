@@ -45,6 +45,7 @@ Patch0113:      0014-i18n-Extract-Casting-panel-messages.patch
 Patch0114:      0015-tests-Validate-Pronk-protocol-payloads.patch
 Patch0115:      0016-tests-Exercise-casting-device-model.patch
 Patch0116:      0017-tests-Exercise-Pronk-service-client.patch
+Patch0117:      0018-docs-Identify-the-Pronk-integration-branch.patch
 
 %gnome_check_version
 
