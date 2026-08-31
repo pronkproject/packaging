@@ -1,0 +1,44 @@
+name: Compatibility
+
+on:
+  push:
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  validate:
+    name: Pinned sources and generated patches
+    runs-on: ubuntu-24.04
+    container: fedora:45
+    steps:
+      - name: Install validation tools
+        run: dnf install -y --setopt=install_weak_deps=False git python3 ShellCheck
+
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+          submodules: recursive
+
+      - name: Validate the compatibility contract
+        run: scripts/check-compatibility
+
+      - name: Recreate downstream patch series
+        run: |
+          output_dir=$(mktemp -d)
+          scripts/generate-patches \
+            sources/mutter packages/mutter/mutter.spec "$output_dir/mutter"
+          scripts/generate-patches \
+            sources/gnome-control-center \
+            packages/gnome-control-center/gnome-control-center.spec \
+            "$output_dir/gnome-control-center"
+
+      - name: Validate tooling
+        run: |
+          python3 -m py_compile scripts/check-compatibility
+          shellcheck scripts/generate-patches scripts/make-pronk-sources \
+            scripts/make-srpm
+
+      - name: Ensure validation is reproducible
+        run: git diff --exit-code
