@@ -2,11 +2,11 @@
 %global debug_package %{nil}
 
 %global kmod_name castkms
-%global commit 101db799f34af6016edb73484e3f9bc55f5a837e
+%global commit 108c53c3a891299b6b3057f820862c4ced46f1b9
 
 Name:           %{kmod_name}-kmod
 Version:        0.11.0
-Release:        4%{?dist}
+Release:        5%{?dist}
 Summary:        CastKMS virtual display kernel module
 
 License:        GPL-2.0-only
@@ -75,6 +75,9 @@ printf '%s\n' castkms > \
 
 
 %changelog
+* Sun Aug 30 2026 Ray Strode <rstrode@redhat.com> - 0.11.0-5
+- Include the ALSA sequencer in dependency-aware boot images
+
 * Sun Aug 30 2026 Ray Strode <rstrode@redhat.com> - 0.11.0-4
 - Require supporting modules for the exact kmod kernel
 
