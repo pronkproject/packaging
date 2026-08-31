@@ -61,17 +61,7 @@ assert_head()
 
 generate_patches()
 {
-  git -C "$1" merge-base --is-ancestor "$2" HEAD
-  git -C "$1" format-patch --no-signature \
-    --output-directory "$work_dir/SOURCES" "$2..HEAD" >/dev/null
-
-  sed -n 's/^Patch[0-9]*:[[:space:]]*//p' "$spec" > "$work_dir/expected-patches"
-  find "$work_dir/SOURCES" -maxdepth 1 -type f -name '*.patch' \
-    -printf '%f\n' | sort > "$work_dir/generated-patches"
-  if ! diff -u "$work_dir/expected-patches" "$work_dir/generated-patches"; then
-    printf 'error: generated patch series does not match %s\n' "$spec" >&2
-    exit 1
-  fi
+  "$repository_root/scripts/generate-patches" "$1" "$spec" "$work_dir/SOURCES"
 }
 
 case $package in
@@ -101,7 +91,7 @@ mutter)
     "$work_dir/SOURCES/mutter-$base.tar.bz2"
   archive_gzip "$repository_root/sources/gvdb" "$gvdb_commit" "gvdb-$gvdb_commit" \
     "$work_dir/SOURCES/gvdb-$gvdb_commit.tar.gz"
-  generate_patches "$repository_root/sources/mutter" "$base"
+  generate_patches "$repository_root/sources/mutter"
   ;;
 gnome-control-center)
   base=$(spec_macro pronk_base)
@@ -118,7 +108,7 @@ gnome-control-center)
     "$work_dir/SOURCES/libgnome-volume-control-$gvc_commit.tar.gz"
   archive_gzip "$repository_root/sources/libgxdp" "$libgxdp_commit" \
     "libgxdp-$libgxdp_commit" "$work_dir/SOURCES/libgxdp-$libgxdp_commit.tar.gz"
-  generate_patches "$repository_root/sources/gnome-control-center" "$base"
+  generate_patches "$repository_root/sources/gnome-control-center"
   ;;
 *)
   usage
