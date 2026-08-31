@@ -59,3 +59,8 @@ separate from the newer PipeWire version required by the supported Mutter and
 Fedora stack. Every SRPM build validates the checked-out submodules, duplicated
 D-Bus contract, package version floors, and checked-in interface constants
 before producing an archive.
+
+The hosted compatibility gate performs these inexpensive contract checks and
+regenerates the downstream patch series on every change. Full SRPM, COPR, and
+virtual-machine builds remain release gates because they are substantially
+more resource intensive.
