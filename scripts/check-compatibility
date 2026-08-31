@@ -20,11 +20,34 @@ def git_head(path: pathlib.Path) -> str:
 
 
 def rust_constant(path: pathlib.Path, name: str) -> int:
-    pattern = re.compile(rf"^pub const {re.escape(name)}: [^=]+ = ([0-9_]+);$", re.MULTILINE)
+    pattern = re.compile(
+        rf"^pub const {re.escape(name)}: [^=]+ = ([0-9_]+)(?: << ([0-9_]+))?;$",
+        re.MULTILINE,
+    )
     match = pattern.search(path.read_text())
     if match is None:
         fail(f"cannot find Rust constant {name} in {path}")
-    return int(match.group(1).replace("_", ""))
+    value = int(match.group(1).replace("_", ""))
+    if match.group(2) is not None:
+        value <<= int(match.group(2).replace("_", ""))
+    return value
+
+
+def c_define(path: pathlib.Path, name: str) -> int:
+    pattern = re.compile(
+        rf"^#define\s+{re.escape(name)}\s+(?:\(\(guint64\)\s*)?"
+        r"(0[xX][0-9a-fA-F]+|[0-9]+)[uUlL]*\)?$",
+        re.MULTILINE,
+    )
+    match = pattern.search(path.read_text())
+    if match is None:
+        fail(f"cannot find C constant {name} in {path}")
+    return int(match.group(1), 0)
+
+
+def expect(label: str, actual: int, expected: int) -> None:
+    if actual != expected:
+        fail(f"{label} is {actual}, expected {expected}")
 
 
 root = pathlib.Path(__file__).resolve().parent.parent
@@ -58,11 +81,11 @@ if chromiacast_version != components["chromiacast_version"]:
 
 interfaces = manifest["interfaces"]
 constant_checks = {
-    "castkms_capture_uapi_major": (
+    "pronk_minimum_capture_uapi_major": (
         pronk / "crates/castkms-sys/src/lib.rs",
         "CAPTURE_UAPI_MAJOR",
     ),
-    "castkms_capture_uapi_minor": (
+    "pronk_minimum_capture_uapi_minor": (
         pronk / "crates/castkms-sys/src/lib.rs",
         "CAPTURE_UAPI_MINOR",
     ),
@@ -84,10 +107,97 @@ constant_checks = {
     ),
 }
 for key, (path, constant) in constant_checks.items():
-    actual = rust_constant(path, constant)
-    expected = interfaces[key]
-    if actual != expected:
-        fail(f"{constant} is {actual}, expected {expected}")
+    expect(constant, rust_constant(path, constant), interfaces[key])
+
+castkms_header = root / "sources/castkms/include/uapi/drm/castkms_drm.h"
+expect(
+    "kernel capture UAPI major",
+    c_define(castkms_header, "DRM_CASTKMS_CAPTURE_UAPI_MAJOR"),
+    interfaces["castkms_tested_capture_uapi_major"],
+)
+expect(
+    "kernel capture UAPI minor",
+    c_define(castkms_header, "DRM_CASTKMS_CAPTURE_UAPI_MINOR"),
+    interfaces["castkms_tested_capture_uapi_minor"],
+)
+expect(
+    "kernel CEC UAPI major",
+    c_define(castkms_header, "DRM_CASTKMS_CEC_UAPI_MAJOR"),
+    interfaces["castkms_cec_uapi_major"],
+)
+expect(
+    "kernel CEC UAPI minor",
+    c_define(castkms_header, "DRM_CASTKMS_CEC_UAPI_MINOR"),
+    interfaces["castkms_cec_uapi_minor"],
+)
+
+mutter_uapi = root / "sources/mutter/src/backends/native/meta-kms-cast-uapi.h"
+expect(
+    "Mutter minimum capture UAPI major",
+    c_define(mutter_uapi, "DRM_CASTKMS_CAPTURE_UAPI_MAJOR"),
+    interfaces["mutter_minimum_capture_uapi_major"],
+)
+expect(
+    "Mutter minimum capture UAPI minor",
+    c_define(mutter_uapi, "DRM_CASTKMS_CAPTURE_UAPI_MINOR"),
+    interfaces["mutter_minimum_capture_uapi_minor"],
+)
+
+dbus_rust = pronk / "crates/pronk-dbus/src/lib.rs"
+expect(
+    "Pronk D-Bus API major",
+    rust_constant(dbus_rust, "API_MAJOR"),
+    interfaces["pronk_dbus_api_major"],
+)
+expect(
+    "Pronk D-Bus API minor",
+    rust_constant(dbus_rust, "API_MINOR"),
+    interfaces["pronk_dbus_api_minor"],
+)
+feature_constants = [
+    "API_FEATURE_DEVICE_INVENTORY",
+    "API_FEATURE_CAST_DISPLAY_LIFECYCLE",
+    "API_FEATURE_CAST_DISPLAY_STATE",
+    "API_FEATURE_CAST_DISPLAY_DYNAMIC_STATE",
+    "API_FEATURE_MEDIA_SESSION_STATE",
+]
+expect(
+    "Pronk D-Bus feature mask",
+    sum(rust_constant(dbus_rust, name) for name in feature_constants),
+    interfaces["pronk_dbus_required_features"],
+)
+
+settings_contract = root / "sources/gnome-control-center/panels/casting"
+settings_private = settings_contract / "cc-pronk-variant-private.h"
+settings_variant = settings_contract / "cc-pronk-variant.c"
+for label, path, name, key in [
+    ("Settings D-Bus API major", settings_private, "CC_CASTING_REQUIRED_API_MAJOR", "pronk_dbus_api_major"),
+    ("Settings D-Bus API minor", settings_private, "CC_CASTING_REQUIRED_API_MINOR", "pronk_dbus_api_minor"),
+    ("Settings D-Bus feature mask", settings_private, "CC_CASTING_REQUIRED_API_FEATURES", "pronk_dbus_required_features"),
+    ("Settings public-device limit", settings_private, "CC_CASTING_MAX_PUBLIC_DEVICES", "pronk_max_public_devices"),
+    ("Settings public-display limit", settings_private, "CC_CASTING_MAX_PUBLIC_DISPLAYS", "pronk_max_public_displays"),
+    ("Settings backend-ID limit", settings_variant, "MAX_BACKEND_ID_BYTES", "pronk_max_backend_id_bytes"),
+    ("Settings device-text limit", settings_variant, "MAX_DEVICE_TEXT_BYTES", "pronk_max_device_text_bytes"),
+    ("Settings metadata-entry limit", settings_variant, "MAX_METADATA_ENTRIES", "pronk_max_metadata_entries"),
+    ("Settings metadata-key limit", settings_variant, "MAX_METADATA_KEY_BYTES", "pronk_max_metadata_key_bytes"),
+    ("Settings metadata-value limit", settings_variant, "MAX_METADATA_VALUE_BYTES", "pronk_max_metadata_value_bytes"),
+    ("Settings operation-error limit", settings_variant, "MAX_OPERATION_ERROR_BYTES", "pronk_max_operation_error_bytes"),
+    ("Settings media-error limit", settings_variant, "MAX_MEDIA_ERROR_BYTES", "pronk_max_media_error_bytes"),
+]:
+    expect(label, c_define(path, name), interfaces[key])
+
+for key, constant in [
+    ("pronk_max_public_devices", "MAX_PUBLIC_DEVICES"),
+    ("pronk_max_public_displays", "MAX_PUBLIC_DISPLAYS"),
+    ("pronk_max_backend_id_bytes", "MAX_BACKEND_ID_BYTES"),
+    ("pronk_max_device_text_bytes", "MAX_DEVICE_TEXT_BYTES"),
+    ("pronk_max_metadata_entries", "MAX_METADATA_ENTRIES"),
+    ("pronk_max_metadata_key_bytes", "MAX_METADATA_KEY_BYTES"),
+    ("pronk_max_metadata_value_bytes", "MAX_METADATA_VALUE_BYTES"),
+    ("pronk_max_operation_error_bytes", "MAX_OPERATION_ERROR_BYTES"),
+    ("pronk_max_media_error_bytes", "MAX_MEDIA_ERROR_BYTES"),
+]:
+    expect(f"Pronk {constant}", rust_constant(dbus_rust, constant), interfaces[key])
 
 dbus_xml = (pronk / "data/dbus-1/interfaces/io.github.pronkproject.Pronk1.xml").read_text()
 dbus_interface_prefix = f"io.github.pronkproject.Pronk{interfaces['pronk_dbus_api_major']}."
