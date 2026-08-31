@@ -17,7 +17,7 @@
 
 Name:          mutter
 Version:       51~beta
-Release:       100.pronk1%{?dist}
+Release:       100.pronk2%{?dist}
 Summary:       Window and compositing manager based on Clutter
 
 # Automatically converted from old format: GPLv2+ - review is highly recommended.

@@ -2,7 +2,7 @@
 
 Name:           pronk
 Version:        0.1.0
-Release:        4%{?dist}
+Release:        5%{?dist}
 Summary:        Use Google Cast devices as managed desktop displays
 
 License:        MIT
