@@ -43,4 +43,6 @@ jobs:
             scripts/make-srpm
 
       - name: Ensure validation is reproducible
-        run: git diff --exit-code
+        run: >-
+          git --git-dir="$GITHUB_WORKSPACE/.git"
+          --work-tree="$GITHUB_WORKSPACE" diff --exit-code
