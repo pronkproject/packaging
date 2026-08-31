@@ -19,5 +19,6 @@ backend_protocol_minor = 0
 
 [requirements]
 rust = "1.83"
-pipewire = "1.6.0"
+pronk_pipewire_api = "1.2.0"
+tested_pipewire = "1.6.0"
 wireplumber = "0.5.15"

@@ -1,3 +1,5 @@
+%global pipewire_version 1.2.0
+
 Name:           pronk
 Version:        0.1.0
 Release:        3%{?dist}
@@ -21,7 +23,7 @@ BuildRequires:  pkgconfig(gstreamer-1.0)
 BuildRequires:  pkgconfig(gstreamer-app-1.0)
 BuildRequires:  pkgconfig(gstreamer-video-1.0)
 BuildRequires:  pkgconfig(libdrm)
-BuildRequires:  pkgconfig(libpipewire-0.3)
+BuildRequires:  pkgconfig(libpipewire-0.3) >= %{pipewire_version}
 BuildRequires:  pkgconfig(libsystemd)
 BuildRequires:  rust >= 1.83
 BuildRequires:  systemd-rpm-macros
@@ -29,7 +31,7 @@ BuildRequires:  wireplumber
 BuildRequires:  libxml2
 BuildRequires:  xz
 
-Requires:       pipewire
+Requires:       pipewire >= %{pipewire_version}
 Requires:       pipewire-gstreamer
 Requires:       systemd
 Requires:       wireplumber >= 0.5.15

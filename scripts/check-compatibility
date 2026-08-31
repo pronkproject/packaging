@@ -103,4 +103,20 @@ if ET.canonicalize(dbus_xml, strip_text=True) != ET.canonicalize(
 ):
     fail("Pronk and GNOME Settings carry different D-Bus contracts")
 
+requirements = manifest["requirements"]
+pipewire_feature = "v" + requirements["pronk_pipewire_api"].replace(".", "_")
+pipewire_dependency = cargo["workspace"]["dependencies"]["pipewire"]
+if pipewire_feature not in pipewire_dependency["features"]:
+    fail(
+        f"Pronk does not enable the declared PipeWire API feature {pipewire_feature}"
+    )
+
+pronk_spec = (root / "packages/pronk/pronk.spec").read_text()
+if f"%global pipewire_version {requirements['pronk_pipewire_api']}" not in pronk_spec:
+    fail("Pronk's RPM PipeWire floor differs from the compatibility manifest")
+
+mutter_spec = (root / "packages/mutter/mutter.spec").read_text()
+if f"%global pipewire_version {requirements['tested_pipewire']}" not in mutter_spec:
+    fail("Mutter's RPM PipeWire floor differs from the tested stack baseline")
+
 print("compatibility manifest matches all pinned sources")
