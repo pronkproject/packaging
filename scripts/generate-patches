@@ -1,0 +1,33 @@
+#!/bin/sh
+# SPDX-License-Identifier: MIT
+set -eu
+
+usage()
+{
+  printf 'usage: %s SOURCE_DIRECTORY SPEC OUTPUT_DIRECTORY\n' "$0" >&2
+  exit 2
+}
+
+test $# -eq 3 || usage
+
+source_dir=$(cd "$1" && pwd)
+spec=$2
+mkdir -p "$3"
+output_dir=$(cd "$3" && pwd)
+
+base=$(sed -n 's/^%global pronk_base[[:space:]]*//p' "$spec")
+test -n "$base"
+git -C "$source_dir" merge-base --is-ancestor "$base" HEAD
+
+git -C "$source_dir" format-patch --no-signature \
+  --output-directory "$output_dir" "$base..HEAD" >/dev/null
+
+work_dir=$(mktemp -d)
+trap 'rm -rf "$work_dir"' EXIT
+sed -n 's/^Patch[0-9]*:[[:space:]]*//p' "$spec" > "$work_dir/expected"
+find "$output_dir" -maxdepth 1 -type f -name '*.patch' \
+  -printf '%f\n' | sort > "$work_dir/generated"
+if ! diff -u "$work_dir/expected" "$work_dir/generated"; then
+  printf 'error: generated patch series does not match %s\n' "$spec" >&2
+  exit 1
+fi
