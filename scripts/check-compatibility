@@ -1,0 +1,96 @@
+#!/usr/bin/python3
+# SPDX-License-Identifier: MIT
+
+import pathlib
+import re
+import subprocess
+import sys
+import tomllib
+
+
+def fail(message: str) -> None:
+    raise SystemExit(f"compatibility error: {message}")
+
+
+def git_head(path: pathlib.Path) -> str:
+    return subprocess.check_output(
+        ["git", "-C", path, "rev-parse", "HEAD"], text=True
+    ).strip()
+
+
+def rust_constant(path: pathlib.Path, name: str) -> int:
+    pattern = re.compile(rf"^pub const {re.escape(name)}: [^=]+ = ([0-9_]+);$", re.MULTILINE)
+    match = pattern.search(path.read_text())
+    if match is None:
+        fail(f"cannot find Rust constant {name} in {path}")
+    return int(match.group(1).replace("_", ""))
+
+
+root = pathlib.Path(__file__).resolve().parent.parent
+manifest = tomllib.loads((root / "compatibility.toml").read_text())
+if manifest.get("format_version") != 1:
+    fail("unsupported manifest format")
+
+components = manifest["components"]
+repositories = {
+    "pronk_commit": root / "sources/pronk",
+    "castkms_commit": root / "sources/castkms",
+    "mutter_commit": root / "sources/mutter",
+    "gnome_control_center_commit": root / "sources/gnome-control-center",
+    "wireplumber_commit": root / "sources/wireplumber",
+}
+for key, repository in repositories.items():
+    actual = git_head(repository)
+    expected = components[key]
+    if actual != expected:
+        fail(f"{repository.relative_to(root)} is at {actual}, expected {expected}")
+
+pronk = root / "sources/pronk"
+cargo = tomllib.loads((pronk / "Cargo.toml").read_text())
+chromiacast = cargo["workspace"]["dependencies"]["chromiacast"]
+chromiacast_version = chromiacast["version"] if isinstance(chromiacast, dict) else chromiacast
+if chromiacast_version != components["chromiacast_version"]:
+    fail(
+        f"Chromiacast dependency is {chromiacast_version}, "
+        f"expected {components['chromiacast_version']}"
+    )
+
+interfaces = manifest["interfaces"]
+constant_checks = {
+    "castkms_capture_uapi_major": (
+        pronk / "crates/castkms-sys/src/lib.rs",
+        "CAPTURE_UAPI_MAJOR",
+    ),
+    "castkms_capture_uapi_minor": (
+        pronk / "crates/castkms-sys/src/lib.rs",
+        "CAPTURE_UAPI_MINOR",
+    ),
+    "castkms_cec_uapi_major": (
+        pronk / "crates/castkms-sys/src/lib.rs",
+        "CEC_UAPI_MAJOR",
+    ),
+    "castkms_cec_uapi_minor": (
+        pronk / "crates/castkms-sys/src/lib.rs",
+        "CEC_UAPI_MINOR",
+    ),
+    "backend_protocol_major": (
+        pronk / "crates/pronk-backend-protocol/src/lib.rs",
+        "PROTOCOL_MAJOR",
+    ),
+    "backend_protocol_minor": (
+        pronk / "crates/pronk-backend-protocol/src/lib.rs",
+        "PROTOCOL_MINOR",
+    ),
+}
+for key, (path, constant) in constant_checks.items():
+    actual = rust_constant(path, constant)
+    expected = interfaces[key]
+    if actual != expected:
+        fail(f"{constant} is {actual}, expected {expected}")
+
+dbus_xml = (pronk / "data/dbus-1/interfaces/io.github.pronkproject.Pronk1.xml").read_text()
+dbus_interface_prefix = f"io.github.pronkproject.Pronk{interfaces['pronk_dbus_api_major']}."
+if f'name="{dbus_interface_prefix}' not in dbus_xml:
+    fail(f"D-Bus interface prefix {dbus_interface_prefix} is absent")
+
+print("compatibility manifest matches all pinned sources")

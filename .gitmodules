@@ -1,0 +1,24 @@
+[submodule "sources/pronk"]
+	path = sources/pronk
+	url = https://github.com/pronkproject/pronk.git
+[submodule "sources/castkms"]
+	path = sources/castkms
+	url = https://github.com/pronkproject/castkms.git
+[submodule "sources/mutter"]
+	path = sources/mutter
+	url = https://github.com/pronkproject/mutter.git
+[submodule "sources/gnome-control-center"]
+	path = sources/gnome-control-center
+	url = https://github.com/pronkproject/gnome-control-center.git
+[submodule "sources/wireplumber"]
+	path = sources/wireplumber
+	url = https://gitlab.freedesktop.org/pipewire/wireplumber.git
+[submodule "sources/libgnome-volume-control"]
+	path = sources/libgnome-volume-control
+	url = https://gitlab.gnome.org/GNOME/libgnome-volume-control.git
+[submodule "sources/gvdb"]
+	path = sources/gvdb
+	url = https://gitlab.gnome.org/GNOME/gvdb.git
+[submodule "sources/libgxdp"]
+	path = sources/libgxdp
+	url = https://gitlab.gnome.org/GNOME/libgxdp.git

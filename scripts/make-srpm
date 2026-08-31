@@ -1,0 +1,133 @@
+#!/bin/sh
+# SPDX-License-Identifier: MIT
+set -eu
+
+usage()
+{
+  printf 'usage: %s PACKAGE [OUTPUT_DIRECTORY]\n' "$0" >&2
+  printf 'packages: pronk castkms-kmod wireplumber mutter gnome-control-center\n' >&2
+  exit 2
+}
+
+test $# -ge 1 && test $# -le 2 || usage
+
+package=$1
+output_dir=${2:-$PWD}
+repository_root=$(CDPATH= cd -- "$(dirname "$0")/.." && pwd)
+spec=$repository_root/packages/$package/$package.spec
+test -f "$spec" || usage
+
+command -v rpmbuild >/dev/null
+command -v git >/dev/null
+command -v python3 >/dev/null
+
+if git -C "$repository_root" submodule status | grep -q '^-'; then
+  printf 'error: initialize source submodules with git submodule update --init --recursive\n' >&2
+  exit 1
+fi
+"$repository_root/scripts/check-compatibility"
+
+mkdir -p "$output_dir"
+output_dir=$(cd "$output_dir" && pwd)
+work_dir=$(mktemp -d)
+trap 'rm -rf "$work_dir"' EXIT
+mkdir -p "$work_dir/BUILD" "$work_dir/BUILDROOT" "$work_dir/RPMS" \
+  "$work_dir/SOURCES" "$work_dir/SPECS" "$work_dir/SRPMS"
+cp "$spec" "$work_dir/SPECS/"
+
+spec_macro()
+{
+  sed -n "s/^%global $1[[:space:]]*//p" "$spec"
+}
+
+archive_gzip()
+{
+  git -C "$1" archive --format=tar --prefix="$3/" "$2" | gzip -n > "$4"
+}
+
+archive_bzip2()
+{
+  git -C "$1" archive --format=tar --prefix="$3/" "$2" | bzip2 -9 > "$4"
+}
+
+assert_head()
+{
+  actual=$(git -C "$1" rev-parse HEAD)
+  if test "$actual" != "$2"; then
+    printf 'error: %s is at %s, expected %s\n' "$1" "$actual" "$2" >&2
+    exit 1
+  fi
+}
+
+generate_patches()
+{
+  git -C "$1" merge-base --is-ancestor "$2" HEAD
+  git -C "$1" format-patch --no-signature \
+    --output-directory "$work_dir/SOURCES" "$2..HEAD" >/dev/null
+
+  sed -n 's/^Patch[0-9]*:[[:space:]]*//p' "$spec" > "$work_dir/expected-patches"
+  find "$work_dir/SOURCES" -maxdepth 1 -type f -name '*.patch' \
+    -printf '%f\n' | sort > "$work_dir/generated-patches"
+  if ! diff -u "$work_dir/expected-patches" "$work_dir/generated-patches"; then
+    printf 'error: generated patch series does not match %s\n' "$spec" >&2
+    exit 1
+  fi
+}
+
+case $package in
+pronk)
+  "$repository_root/scripts/make-pronk-sources" \
+    "$repository_root/sources/pronk" "$spec" "$work_dir/SOURCES"
+  ;;
+castkms-kmod)
+  commit=$(spec_macro commit)
+  test -n "$commit"
+  assert_head "$repository_root/sources/castkms" "$commit"
+  archive_gzip "$repository_root/sources/castkms" "$commit" "castkms-$commit" \
+    "$work_dir/SOURCES/castkms-$commit.tar.gz"
+  ;;
+wireplumber)
+  version=$(sed -n 's/^Version:[[:space:]]*//p' "$spec")
+  test -n "$version"
+  archive_bzip2 "$repository_root/sources/wireplumber" HEAD "wireplumber-$version" \
+    "$work_dir/SOURCES/wireplumber-$version.tar.bz2"
+  ;;
+mutter)
+  base=$(spec_macro pronk_base)
+  gvdb_commit=$(spec_macro gvdb_commit)
+  test -n "$base" && test -n "$gvdb_commit"
+  assert_head "$repository_root/sources/gvdb" "$gvdb_commit"
+  archive_bzip2 "$repository_root/sources/mutter" "$base" "mutter-$base" \
+    "$work_dir/SOURCES/mutter-$base.tar.bz2"
+  archive_gzip "$repository_root/sources/gvdb" "$gvdb_commit" "gvdb-$gvdb_commit" \
+    "$work_dir/SOURCES/gvdb-$gvdb_commit.tar.gz"
+  generate_patches "$repository_root/sources/mutter" "$base"
+  ;;
+gnome-control-center)
+  base=$(spec_macro pronk_base)
+  gvc_commit=$(spec_macro gvc_commit)
+  libgxdp_commit=$(spec_macro libgxdp_commit)
+  test -n "$base" && test -n "$gvc_commit" && test -n "$libgxdp_commit"
+  assert_head "$repository_root/sources/libgnome-volume-control" "$gvc_commit"
+  assert_head "$repository_root/sources/libgxdp" "$libgxdp_commit"
+  archive_bzip2 "$repository_root/sources/gnome-control-center" "$base" \
+    "gnome-control-center-$base" \
+    "$work_dir/SOURCES/gnome-control-center-$base.tar.bz2"
+  archive_gzip "$repository_root/sources/libgnome-volume-control" "$gvc_commit" \
+    "libgnome-volume-control-$gvc_commit" \
+    "$work_dir/SOURCES/libgnome-volume-control-$gvc_commit.tar.gz"
+  archive_gzip "$repository_root/sources/libgxdp" "$libgxdp_commit" \
+    "libgxdp-$libgxdp_commit" "$work_dir/SOURCES/libgxdp-$libgxdp_commit.tar.gz"
+  generate_patches "$repository_root/sources/gnome-control-center" "$base"
+  ;;
+*)
+  usage
+  ;;
+esac
+
+rpmbuild -bs --define "_topdir $work_dir" "$work_dir/SPECS/${spec##*/}"
+for source_rpm in "$work_dir"/SRPMS/*.src.rpm; do
+  destination=$output_dir/${source_rpm##*/}
+  cp "$source_rpm" "$destination"
+  printf '%s\n' "$destination"
+done

@@ -1,0 +1,62 @@
+#!/bin/sh
+# SPDX-License-Identifier: MIT
+set -eu
+
+usage()
+{
+  printf 'usage: %s SOURCE_DIRECTORY SPEC OUTPUT_DIRECTORY\n' "$0" >&2
+  exit 2
+}
+
+test $# -eq 3 || usage
+
+source_dir=$(cd "$1" && pwd)
+spec=$2
+mkdir -p "$3"
+output_dir=$(cd "$3" && pwd)
+
+version=$(sed -n 's/^Version:[[:space:]]*//p' "$spec")
+test -n "$version"
+
+work_dir=$(mktemp -d)
+trap 'rm -rf "$work_dir"' EXIT
+mkdir -p "$work_dir/cargo-home" "$work_dir/source"
+
+archive_root=pronk-$version
+source_date_epoch=$(git -C "$source_dir" show -s --format=%ct HEAD)
+
+git -C "$source_dir" archive \
+  --format=tar \
+  --prefix="$archive_root/" \
+  HEAD |
+  gzip -n > "$output_dir/$archive_root.tar.gz"
+
+git -C "$source_dir" archive \
+  --format=tar \
+  --prefix="$archive_root/" \
+  HEAD |
+  tar -xf - -C "$work_dir/source"
+
+(
+  cd "$work_dir/source/$archive_root"
+  mkdir -p .cargo
+  if test -n "${CARGO_TOOLCHAIN:-}"; then
+    CARGO_HOME="$work_dir/cargo-home" \
+      cargo "+$CARGO_TOOLCHAIN" vendor --locked --versioned-dirs vendor > .cargo/config.toml
+  else
+    CARGO_HOME="$work_dir/cargo-home" \
+      cargo vendor --locked --versioned-dirs vendor > .cargo/config.toml
+  fi
+  tar \
+    --sort=name \
+    --mtime="@$source_date_epoch" \
+    --owner=0 \
+    --group=0 \
+    --numeric-owner \
+    -cJf "$output_dir/$archive_root-vendor.tar.xz" \
+    .cargo vendor
+)
+
+printf '%s\n' \
+  "$output_dir/$archive_root.tar.gz" \
+  "$output_dir/$archive_root-vendor.tar.xz"

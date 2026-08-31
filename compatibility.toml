@@ -1,0 +1,23 @@
+format_version = 1
+
+[components]
+pronk_commit = "a3e04a57bf2e5e99914e69e817a6c7aa98b61ec2"
+castkms_commit = "108c53c3a891299b6b3057f820862c4ced46f1b9"
+mutter_commit = "c66e0b60456bc5025861c5fa0e4b48536643bb23"
+gnome_control_center_commit = "056317db5ca21986892dacb881b27ae64e2ab8f4"
+wireplumber_commit = "bc4fa8f5e84806f86530c97cb35283eecc3ec081"
+chromiacast_version = "0.2.0"
+
+[interfaces]
+castkms_capture_uapi_major = 0
+castkms_capture_uapi_minor = 11
+castkms_cec_uapi_major = 0
+castkms_cec_uapi_minor = 1
+pronk_dbus_api_major = 1
+backend_protocol_major = 1
+backend_protocol_minor = 0
+
+[requirements]
+rust = "1.83"
+pipewire = "1.6.0"
+wireplumber = "0.5.15"
