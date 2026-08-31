@@ -1,7 +1,7 @@
 format_version = 1
 
 [components]
-pronk_commit = "a3e04a57bf2e5e99914e69e817a6c7aa98b61ec2"
+pronk_commit = "85881a1091c2920fbd99b8ecf70d8396ecd8b8fb"
 castkms_commit = "108c53c3a891299b6b3057f820862c4ced46f1b9"
 mutter_commit = "c66e0b60456bc5025861c5fa0e4b48536643bb23"
 gnome_control_center_commit = "056317db5ca21986892dacb881b27ae64e2ab8f4"
