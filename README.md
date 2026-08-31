@@ -53,6 +53,9 @@ name or count mismatch intentionally stops the SRPM build so branch history and
 packaging cannot silently diverge.
 
 `compatibility.toml` is the machine-readable assembly contract. It records the
-exact source commits, public protocol versions, and minimum runtime versions.
-Every SRPM build validates the checked-out submodules and Pronk's checked-in
-interface constants against it before producing an archive.
+exact source commits, public protocol versions, component API floors, and the
+tested whole-stack baseline. In particular, Pronk's PipeWire API floor is
+separate from the newer PipeWire version required by the supported Mutter and
+Fedora stack. Every SRPM build validates the checked-out submodules, duplicated
+D-Bus contract, package version floors, and checked-in interface constants
+before producing an archive.
