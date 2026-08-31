@@ -2,7 +2,7 @@
 
 Name:           pronk
 Version:        0.1.0
-Release:        3%{?dist}
+Release:        4%{?dist}
 Summary:        Use Google Cast devices as managed desktop displays
 
 License:        MIT
@@ -103,6 +103,9 @@ XDG_RUNTIME_DIR="$runtime_dir" CARGO_NET_OFFLINE=true dbus-run-session -- \
 
 
 %changelog
+* Mon Aug 31 2026 Ray Strode <rstrode@redhat.com> - 0.1.0-4
+- Build against the published Chromiacast 0.3.0 crate
+
 * Sun Aug 30 2026 Ray Strode <rstrode@redhat.com> - 0.1.0-3
 - Install the H.264 parser required by the media graph
 
