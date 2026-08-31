@@ -4,7 +4,7 @@ format_version = 1
 pronk_commit = "14ee75824596726027b7a84d2f96524d7153c6ad"
 castkms_commit = "108c53c3a891299b6b3057f820862c4ced46f1b9"
 mutter_commit = "3ab5b5fc6b5c88fc7d72b6a19e0017b41756b7d7"
-gnome_control_center_commit = "89b05432f8c49ebda981004b1113e614e1c82648"
+gnome_control_center_commit = "db25fc88934931b7aaf63070000604580079cb08"
 wireplumber_commit = "bc4fa8f5e84806f86530c97cb35283eecc3ec081"
 chromiacast_version = "0.3.0"
 

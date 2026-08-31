@@ -16,7 +16,7 @@
 
 Name:           gnome-control-center
 Version:        51~beta
-Release:        100.pronk1%{?dist}
+Release:        100.pronk2%{?dist}
 Summary:        Utilities to configure the GNOME desktop
 
 License:        GPL-2.0-or-later AND CC0-1.0
