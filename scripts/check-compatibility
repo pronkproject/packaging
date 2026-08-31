@@ -6,6 +6,7 @@ import re
 import subprocess
 import sys
 import tomllib
+import xml.etree.ElementTree as ET
 
 
 def fail(message: str) -> None:
@@ -92,5 +93,14 @@ dbus_xml = (pronk / "data/dbus-1/interfaces/io.github.pronkproject.Pronk1.xml").
 dbus_interface_prefix = f"io.github.pronkproject.Pronk{interfaces['pronk_dbus_api_major']}."
 if f'name="{dbus_interface_prefix}' not in dbus_xml:
     fail(f"D-Bus interface prefix {dbus_interface_prefix} is absent")
+
+settings_dbus_xml = (
+    root
+    / "sources/gnome-control-center/panels/casting/io.github.pronkproject.Pronk1.xml"
+).read_text()
+if ET.canonicalize(dbus_xml, strip_text=True) != ET.canonicalize(
+    settings_dbus_xml, strip_text=True
+):
+    fail("Pronk and GNOME Settings carry different D-Bus contracts")
 
 print("compatibility manifest matches all pinned sources")
