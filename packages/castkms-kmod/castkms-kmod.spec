@@ -2,11 +2,11 @@
 %global debug_package %{nil}
 
 %global kmod_name castkms
-%global commit 108c53c3a891299b6b3057f820862c4ced46f1b9
+%global commit afea27fc02e79abf7421ac1a3222838c4b2a3ac1
 
 Name:           %{kmod_name}-kmod
-Version:        0.11.0
-Release:        5%{?dist}
+Version:        0.12.0
+Release:        1%{?dist}
 Summary:        CastKMS virtual display kernel module
 
 License:        GPL-2.0-only
@@ -75,6 +75,9 @@ printf '%s\n' castkms > \
 
 
 %changelog
+* Thu Sep 03 2026 Ray Strode <rstrode@redhat.com> - 0.12.0-1
+- Add grant-scoped audio taps and capture owned direct-scanout frames
+
 * Sun Aug 30 2026 Ray Strode <rstrode@redhat.com> - 0.11.0-5
 - Include the ALSA sequencer in dependency-aware boot images
 

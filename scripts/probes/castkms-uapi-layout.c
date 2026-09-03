@@ -24,8 +24,10 @@ int main(void)
 	LAYOUT(drm_castkms_capture_set_output_edid);
 	LAYOUT(drm_castkms_capture_attach_monitor);
 	LAYOUT(drm_castkms_capture_detach_monitor);
+	LAYOUT(drm_castkms_create_grant);
 	LAYOUT(drm_castkms_get_grant);
 	LAYOUT(drm_castkms_get_output);
+	LAYOUT(drm_castkms_open_audio_tap);
 	LAYOUT(drm_event_castkms_grant_revoked);
 	LAYOUT(drm_event_castkms_grant_state);
 	LAYOUT(drm_event_castkms_capture_frame);
@@ -43,7 +45,10 @@ int main(void)
 	FIELD(drm_castkms_capture_register_buffer, mode_generation);
 	FIELD(drm_castkms_capture_queue_buffer, user_data);
 	FIELD(drm_castkms_capture_attach_monitor, display_name_ptr);
+	FIELD(drm_castkms_create_grant, fd);
+	FIELD(drm_castkms_create_grant, control_fd);
 	FIELD(drm_castkms_get_grant, output_index);
+	FIELD(drm_castkms_open_audio_tap, buffer_frames);
 	FIELD(drm_event_castkms_capture_frame, cursor_serial);
 	FIELD(drm_castkms_cec_get_state, pending_cookie);
 	FIELD(drm_castkms_cec_event_tx, msg);

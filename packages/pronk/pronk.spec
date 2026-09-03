@@ -2,7 +2,7 @@
 
 Name:           pronk
 Version:        0.1.0
-Release:        5%{?dist}
+Release:        6%{?dist}
 Summary:        Use Google Cast devices as managed desktop displays
 
 License:        MIT
@@ -33,15 +33,17 @@ BuildRequires:  xz
 
 Requires:       pipewire >= %{pipewire_version}
 Requires:       pipewire-gstreamer
+Requires:       polkit
 Requires:       systemd
 Requires:       wireplumber >= 0.5.15
 Requires:       gstreamer1-plugins-base
 Requires:       gstreamer1-plugins-bad-free
+Requires:       gstreamer1-plugins-good
 # x264enc is distributed by RPM Fusion on Fedora. Keeping this as a hard
 # requirement makes a missing encoder an installation error instead of a
 # casting failure after setup.
 Requires:       gstreamer1-plugins-ugly
-Recommends:     akmod-castkms >= 0.11.0
+Recommends:     akmod-castkms >= 0.12.0
 
 %description
 Pronk coordinates an experimental CastKMS virtual monitor with an isolated
@@ -84,17 +86,35 @@ XDG_RUNTIME_DIR="$runtime_dir" CARGO_NET_OFFLINE=true dbus-run-session -- \
 %doc README.md
 %{_bindir}/pronkctl
 %{_bindir}/pronkd
+%{_libexecdir}/pronk-grant-helper
 %{_libexecdir}/pronk/
 %{_prefix}/lib/pronk/
+%{_unitdir}/pronk.service
+%{_unitdir}/pronk-backend-mock.socket
+%{_unitdir}/pronk-backend-mock@.service
+%{_unitdir}/pronk-chromiacast.socket
+%{_unitdir}/pronk-chromiacast@.service
+%{_unitdir}/pronk-pipewire.service
+%{_unitdir}/pronk-pipewire.socket
+%{_unitdir}/pronk-wireplumber.service
 %{_userunitdir}/pronk.service
 %{_userunitdir}/pronk-backend-mock.socket
 %{_userunitdir}/pronk-backend-mock@.service
 %{_userunitdir}/pronk-chromiacast.socket
 %{_userunitdir}/pronk-chromiacast@.service
+%{_userunitdir}/pronk-pipewire.service
+%{_userunitdir}/pronk-pipewire.socket
+%{_userunitdir}/pronk-wireplumber.service
 %{_userunitdir}/sockets.target.wants/pronk-chromiacast.socket
+%{_sysusersdir}/pronk.conf
+%{_tmpfilesdir}/pronk.conf
 %{_datadir}/dbus-1/interfaces/io.github.pronkproject.Pronk1.xml
 %{_datadir}/dbus-1/services/io.github.pronkproject.Pronk1.service
+%{_datadir}/dbus-1/system-services/io.github.pronkproject.Pronk1.service
+%{_datadir}/dbus-1/system.d/io.github.pronkproject.Pronk1.conf
 %{_datadir}/pipewire/pipewire.conf.d/80-pronk-remotes.conf
+%{_datadir}/polkit-1/actions/io.github.pronkproject.Pronk.policy
+%{_datadir}/polkit-1/rules.d/20-pronk.rules
 %{_datadir}/wireplumber/scripts/pronk-cast-audio-default.lua
 %{_datadir}/wireplumber/scripts/pronk-policy-marker.lua
 %{_datadir}/wireplumber/scripts/pronk-private-policy.lua
@@ -103,6 +123,9 @@ XDG_RUNTIME_DIR="$runtime_dir" CARGO_NET_OFFLINE=true dbus-run-session -- \
 
 
 %changelog
+* Thu Sep 03 2026 Ray Strode <rstrode@redhat.com> - 0.1.0-6
+- Add system-service deployment and VP8 casting with H.264 fallback
+
 * Mon Aug 31 2026 Ray Strode <rstrode@redhat.com> - 0.1.0-4
 - Build against the published Chromiacast 0.3.0 crate
 
