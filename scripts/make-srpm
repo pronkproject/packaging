@@ -42,12 +42,18 @@ spec_macro()
 
 archive_gzip()
 {
-  git -C "$1" archive --format=tar --prefix="$3/" "$2" | gzip -n > "$4"
+  archive=$work_dir/source-archive.tar
+  git -C "$1" archive --format=tar --prefix="$3/" --output="$archive" "$2"
+  gzip -n < "$archive" > "$4"
+  rm -f "$archive"
 }
 
 archive_bzip2()
 {
-  git -C "$1" archive --format=tar --prefix="$3/" "$2" | bzip2 -9 > "$4"
+  archive=$work_dir/source-archive.tar
+  git -C "$1" archive --format=tar --prefix="$3/" --output="$archive" "$2"
+  bzip2 -9 < "$archive" > "$4"
+  rm -f "$archive"
 }
 
 assert_head()
