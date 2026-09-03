@@ -15,6 +15,7 @@ Before submitting a change, initialize every submodule and run:
 ```sh
 scripts/check-compatibility
 scripts/check-castkms-uapi-layout
+scripts/pronk-dev-sysext check
 output_dir=$(mktemp -d)
 scripts/generate-patches sources/mutter packages/mutter/mutter.spec \
   "$output_dir/mutter"
@@ -22,7 +23,9 @@ scripts/generate-patches sources/gnome-control-center \
   packages/gnome-control-center/gnome-control-center.spec \
   "$output_dir/gnome-control-center"
 shellcheck scripts/check-castkms-uapi-layout scripts/generate-patches \
-  scripts/make-pronk-sources scripts/make-srpm
+  scripts/make-pronk-sources scripts/make-srpm scripts/pronk-dev-sysext \
+  scripts/sysext/pronk-load-castkms \
+  scripts/sysext/pronk-sysext-generator tests/sysext/check-dev-sysext
 ```
 
 Build affected SRPMs with `scripts/make-srpm` before publishing a package-set

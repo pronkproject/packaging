@@ -16,7 +16,7 @@ jobs:
       - name: Install validation tools
         run: >-
           dnf install -y --setopt=install_weak_deps=False
-          cargo diffutils gcc git libdrm-devel python3 rust ShellCheck
+          cargo diffutils gcc git libdrm-devel python3 rust ShellCheck systemd
 
       - uses: actions/checkout@v7
         with:
@@ -28,6 +28,9 @@ jobs:
 
       - name: Compare the CastKMS C and Rust ABIs
         run: scripts/check-castkms-uapi-layout
+
+      - name: Validate the development system extension
+        run: scripts/pronk-dev-sysext check
 
       - name: Recreate downstream patch series
         run: |
@@ -43,7 +46,11 @@ jobs:
         run: |
           python3 -m py_compile scripts/check-compatibility
           shellcheck scripts/check-castkms-uapi-layout \
-            scripts/generate-patches scripts/make-pronk-sources scripts/make-srpm
+            scripts/generate-patches scripts/make-pronk-sources \
+            scripts/make-srpm scripts/pronk-dev-sysext \
+            scripts/sysext/pronk-load-castkms \
+            scripts/sysext/pronk-sysext-generator \
+            tests/sysext/check-dev-sysext
 
       - name: Ensure validation is reproducible
         run: >-
