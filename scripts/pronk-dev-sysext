@@ -243,7 +243,7 @@ jobs()
 	fi
 
 	processors=$(nproc)
-	memory_kib=$(awk '/^MemTotal:/ { print $2 }' /proc/meminfo)
+	memory_kib=$(awk '/^MemAvailable:/ { print $2 }' /proc/meminfo)
 	memory_jobs=$((memory_kib / 2097152))
 	((memory_jobs > 0)) || memory_jobs=1
 	selected=$processors
