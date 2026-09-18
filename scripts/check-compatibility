@@ -21,7 +21,7 @@ def git_head(path: pathlib.Path) -> str:
 
 def rust_constant(path: pathlib.Path, name: str) -> int:
     pattern = re.compile(
-        rf"^pub const {re.escape(name)}: [^=]+ = ([0-9_]+)(?: << ([0-9_]+))?;$",
+        rf"^(?:pub\s+)?const {re.escape(name)}: [^=]+ = ([0-9_]+)(?: << ([0-9_]+))?;$",
         re.MULTILINE,
     )
     match = pattern.search(path.read_text())
@@ -36,13 +36,17 @@ def rust_constant(path: pathlib.Path, name: str) -> int:
 def c_define(path: pathlib.Path, name: str) -> int:
     pattern = re.compile(
         rf"^#define\s+{re.escape(name)}\s+(?:\(\(guint64\)\s*)?"
-        r"(0[xX][0-9a-fA-F]+|[0-9]+)[uUlL]*\)?$",
+        r"\(?(0[xX][0-9a-fA-F]+|[0-9]+)[uUlL]*"
+        r"(?:\s*<<\s*([0-9]+)[uUlL]*)?\)?$",
         re.MULTILINE,
     )
     match = pattern.search(path.read_text())
     if match is None:
         fail(f"cannot find C constant {name} in {path}")
-    return int(match.group(1), 0)
+    value = int(match.group(1), 0)
+    if match.group(2) is not None:
+        value <<= int(match.group(2))
+    return value
 
 
 def expect(label: str, actual: int, expected: int) -> None:
@@ -81,21 +85,21 @@ if chromiacast_version != components["chromiacast_version"]:
 
 interfaces = manifest["interfaces"]
 constant_checks = {
-    "pronk_minimum_capture_uapi_major": (
-        pronk / "crates/castkms-sys/src/lib.rs",
-        "CAPTURE_UAPI_MAJOR",
+    "castkms_monitor_control_version": (
+        pronk / "crates/castkms-monitor/src/lib.rs",
+        "VERSION",
     ),
-    "pronk_minimum_capture_uapi_minor": (
+    "castkms_renderer_version": (
         pronk / "crates/castkms-sys/src/lib.rs",
-        "CAPTURE_UAPI_MINOR",
+        "RENDERER_VERSION",
     ),
-    "castkms_cec_uapi_major": (
+    "castkms_renderer_constraints_version": (
         pronk / "crates/castkms-sys/src/lib.rs",
-        "CEC_UAPI_MAJOR",
+        "RENDERER_CONSTRAINTS_VERSION",
     ),
-    "castkms_cec_uapi_minor": (
+    "castkms_renderer_job_version": (
         pronk / "crates/castkms-sys/src/lib.rs",
-        "CEC_UAPI_MINOR",
+        "RENDERER_JOB_VERSION",
     ),
     "backend_protocol_major": (
         pronk / "crates/pronk-backend-protocol/src/lib.rs",
@@ -109,39 +113,109 @@ constant_checks = {
 for key, (path, constant) in constant_checks.items():
     expect(constant, rust_constant(path, constant), interfaces[key])
 
-castkms_header = root / "sources/castkms/include/uapi/drm/castkms_drm.h"
-expect(
-    "kernel capture UAPI major",
-    c_define(castkms_header, "DRM_CASTKMS_CAPTURE_UAPI_MAJOR"),
-    interfaces["castkms_tested_capture_uapi_major"],
-)
-expect(
-    "kernel capture UAPI minor",
-    c_define(castkms_header, "DRM_CASTKMS_CAPTURE_UAPI_MINOR"),
-    interfaces["castkms_tested_capture_uapi_minor"],
-)
-expect(
-    "kernel CEC UAPI major",
-    c_define(castkms_header, "DRM_CASTKMS_CEC_UAPI_MAJOR"),
-    interfaces["castkms_cec_uapi_major"],
-)
-expect(
-    "kernel CEC UAPI minor",
-    c_define(castkms_header, "DRM_CASTKMS_CEC_UAPI_MINOR"),
-    interfaces["castkms_cec_uapi_minor"],
-)
+castkms_uapi = root / "sources/castkms/include/uapi/drm"
+mutter_uapi = root / "sources/mutter/src/backends/native"
+cross_component_defines = [
+    (
+        "generic capture grant capability",
+        castkms_uapi / "drm_capture.h",
+        mutter_uapi / "meta-drm-capture.h",
+        "DRM_CAP_CAPTURE_GRANT",
+        "drm_capture_grant_cap",
+    ),
+    (
+        "atomic preparation client capability",
+        castkms_uapi / "drm_prepare.h",
+        mutter_uapi / "meta-drm-preparation.h",
+        "DRM_CLIENT_CAP_ATOMIC_PREPARATION",
+        "drm_atomic_preparation_client_cap",
+    ),
+    (
+        "KMS constraints client capability",
+        castkms_uapi / "drm_constraints.h",
+        mutter_uapi / "meta-drm-constraints.h",
+        "DRM_CLIENT_CAP_KMS_CONSTRAINTS",
+        "drm_kms_constraints_client_cap",
+    ),
+    (
+        "KMS constraints encoding version",
+        castkms_uapi / "drm_constraints.h",
+        mutter_uapi / "meta-drm-constraints.h",
+        "DRM_MODE_CONSTRAINTS_VERSION",
+        "drm_kms_constraints_version",
+    ),
+    (
+        "KMS constraints format-record limit",
+        castkms_uapi / "drm_constraints.h",
+        mutter_uapi / "meta-drm-constraints.h",
+        "DRM_MODE_CONSTRAINTS_MAX_FORMATS",
+        "drm_kms_constraints_max_formats",
+    ),
+    (
+        "KMS constraints plane-geometry-record limit",
+        castkms_uapi / "drm_constraints.h",
+        mutter_uapi / "meta-drm-constraints.h",
+        "DRM_MODE_CONSTRAINTS_MAX_PLANE_GEOMETRIES",
+        "drm_kms_constraints_max_plane_geometries",
+    ),
+    (
+        "KMS constraints YUV-property applicability flag",
+        castkms_uapi / "drm_constraints.h",
+        mutter_uapi / "meta-drm-constraints.h",
+        "DRM_MODE_CONSTRAINTS_PROPERTY_PLANE_YUV",
+        "drm_kms_constraints_property_plane_yuv",
+    ),
+    (
+        "CastKMS monitor-control version",
+        castkms_uapi / "castkms_drm.h",
+        mutter_uapi / "meta-drm-castkms.h",
+        "DRM_CASTKMS_MONITOR_CONTROL_VERSION",
+        "castkms_monitor_control_version",
+    ),
+    (
+        "CastKMS renderer version",
+        castkms_uapi / "castkms_drm.h",
+        mutter_uapi / "meta-drm-castkms.h",
+        "DRM_CASTKMS_RENDERER_VERSION",
+        "castkms_renderer_version",
+    ),
+]
+for label, kernel_path, mutter_path, name, key in cross_component_defines:
+    expect(f"kernel {label}", c_define(kernel_path, name), interfaces[key])
+    expect(f"Mutter {label}", c_define(mutter_path, name), interfaces[key])
 
-mutter_uapi = root / "sources/mutter/src/backends/native/meta-kms-cast-uapi.h"
-expect(
-    "Mutter minimum capture UAPI major",
-    c_define(mutter_uapi, "DRM_CASTKMS_CAPTURE_UAPI_MAJOR"),
-    interfaces["mutter_minimum_capture_uapi_major"],
-)
-expect(
-    "Mutter minimum capture UAPI minor",
-    c_define(mutter_uapi, "DRM_CASTKMS_CAPTURE_UAPI_MINOR"),
-    interfaces["mutter_minimum_capture_uapi_minor"],
-)
+for label, name in [
+    ("renderer empty state", "DRM_CASTKMS_RENDERER_STATE_EMPTY"),
+    ("renderer configured state", "DRM_CASTKMS_RENDERER_STATE_CONFIGURED"),
+    ("renderer publishing state", "DRM_CASTKMS_RENDERER_STATE_PUBLISHING"),
+    ("renderer published state", "DRM_CASTKMS_RENDERER_STATE_PUBLISHED"),
+    ("renderer withdrawn state", "DRM_CASTKMS_RENDERER_STATE_WITHDRAWN"),
+    ("renderer creation command", "DRM_CASTKMS_CREATE_RENDERER"),
+    ("renderer query command", "DRM_CASTKMS_RENDERER_QUERY"),
+]:
+    expect(
+        f"Mutter {label}",
+        c_define(mutter_uapi / "meta-drm-castkms.h", name),
+        c_define(castkms_uapi / "castkms_drm.h", name),
+    )
+
+for label, name, key in [
+    (
+        "renderer constraints version",
+        "DRM_CASTKMS_RENDERER_CONSTRAINTS_VERSION",
+        "castkms_renderer_constraints_version",
+    ),
+    (
+        "renderer job version",
+        "DRM_CASTKMS_RENDERER_JOB_VERSION",
+        "castkms_renderer_job_version",
+    ),
+]:
+    expect(
+        f"kernel {label}",
+        c_define(castkms_uapi / "castkms_drm.h", name),
+        interfaces[key],
+    )
 
 dbus_rust = pronk / "crates/pronk-dbus/src/lib.rs"
 expect(
@@ -214,6 +288,22 @@ if ET.canonicalize(dbus_xml, strip_text=True) != ET.canonicalize(
     fail("Pronk and GNOME Settings carry different D-Bus contracts")
 
 requirements = manifest["requirements"]
+pronk_rust = cargo["workspace"]["package"]["rust-version"]
+if pronk_rust != requirements["rust"]:
+    fail(
+        f"Pronk Rust floor is {pronk_rust}, "
+        f"expected {requirements['rust']}"
+    )
+
+kernel_rust = subprocess.check_output(
+    [root / "sources/castkms/scripts/min-tool-version.sh", "rustc"], text=True
+).strip()
+if kernel_rust != requirements["kernel_rust"]:
+    fail(
+        f"kernel Rust floor is {kernel_rust}, "
+        f"expected {requirements['kernel_rust']}"
+    )
+
 pipewire_feature = "v" + requirements["pronk_pipewire_api"].replace(".", "_")
 pipewire_dependency = cargo["workspace"]["dependencies"]["pipewire"]
 if pipewire_feature not in pipewire_dependency["features"]:
@@ -222,6 +312,10 @@ if pipewire_feature not in pipewire_dependency["features"]:
     )
 
 pronk_spec = (root / "packages/pronk/pronk.spec").read_text()
+if f"BuildRequires:  cargo >= {requirements['cargo']}" not in pronk_spec:
+    fail("Pronk's RPM Cargo floor differs from the compatibility manifest")
+if f"BuildRequires:  rust >= {requirements['rust']}" not in pronk_spec:
+    fail("Pronk's RPM Rust floor differs from the compatibility manifest")
 if f"%global pipewire_version {requirements['pronk_pipewire_api']}" not in pronk_spec:
     fail("Pronk's RPM PipeWire floor differs from the compatibility manifest")
 

@@ -21,10 +21,6 @@ state_dir=${PRONK_SYSEXT_STATE_DIR:-$state_base/pronk-sysext}
 podman_root=${PRONK_SYSEXT_PODMAN_ROOT:-$data_base/pronk-sysext/podman-root}
 podman_runroot=${PRONK_SYSEXT_PODMAN_RUNROOT:-${XDG_RUNTIME_DIR:-/run/user/$(id -u)}/pronk-sysext/podman-runroot}
 extension_store=${PRONK_SYSEXT_STORE:-/var/lib/pronk-sysext}
-signing_dir=${PRONK_MODULE_SIGNING_DIR:-/var/lib/castkms-module-signing}
-signing_key=${PRONK_MODULE_SIGNING_KEY:-$signing_dir/private-key.pem}
-signing_certificate=${PRONK_MODULE_SIGNING_CERTIFICATE:-$signing_dir/public-key.der}
-sign_file=${PRONK_MODULE_SIGN_FILE:-$signing_dir/sign-file}
 
 run_tests=false
 rebuild_builder=false
@@ -88,9 +84,9 @@ usage()
 	cat <<EOF
 Usage: scripts/pronk-dev-sysext [OPTIONS] COMMAND
 
-Build and deploy the complete Pronk development stack as a systemd system
-extension. Source builds happen in a dedicated rootless Podman image; only
-runtime files are installed on the host.
+Build and deploy the Pronk userspace stack as a systemd system extension.
+Source builds happen in a dedicated rootless Podman image; only runtime files
+are installed on the host.
 
 Commands:
   prepare   Create or update the persistent build image
@@ -98,7 +94,7 @@ Commands:
   install   Publish the staged extension for activation at the next boot
   deploy    Run prepare, build, and install
   activate  Merge an installed extension without rebooting when safe
-  status    Show compatibility, merge, module, and service state
+  status    Show compatibility, merge, kernel, and service state
   check     Check the deployment scripts without changing the system
 
 Options:
@@ -206,7 +202,19 @@ host_ostree_version()
 
 kernel_release()
 {
-	printf '%s\n' "${PRONK_HOST_KERNEL_RELEASE:-$(uname -r)}"
+	uname -r
+}
+
+require_pinned_castkms_kernel()
+{
+	local release
+	local revision
+
+	revision=$(git_head_revision "$castkms_source")
+	release=$(kernel_release)
+	[[ $release == *"-pronk-g$revision" ]] ||
+		die "the running kernel does not match CastKMS revision $revision: $release"
+	castkms_is_available || die 'the running kernel does not provide CastKMS'
 }
 
 safe_component()
@@ -257,18 +265,13 @@ podman_cmd()
 	podman --root "$podman_root" --runroot "$podman_runroot" "$@"
 }
 
-kernel_package_fields()
-{
-	rpm -q --qf '%{VERSION} %{RELEASE} %{ARCH}\n' "kernel-core-$(kernel_release)"
-}
-
 builder_image()
 {
 	local definition_hash
 	definition_hash=$(sha256sum "$script_dir/sysext/Containerfile")
 	definition_hash=${definition_hash%% *}
-	printf 'localhost/pronk-sysext-builder:f%s-%s-%s\n' \
-		"$(host_version_id)" "$(kernel_release)" "${definition_hash:0:12}"
+	printf 'localhost/pronk-sysext-builder:f%s-%s\n' \
+		"$(host_version_id)" "${definition_hash:0:12}"
 }
 
 builder_exists()
@@ -283,20 +286,11 @@ builder_identity()
 
 prepare_builder()
 {
-	local kernel_version
-	local kernel_package_release
-	local kernel_arch
-	local kernel_nevra
-	local kernel_url
 	local image
 
 	require_command podman
-	require_command rpm
 	ensure_state_directories
 
-	read -r kernel_version kernel_package_release kernel_arch < <(kernel_package_fields)
-	kernel_nevra="$kernel_version-$kernel_package_release.$kernel_arch"
-	kernel_url="https://kojipkgs.fedoraproject.org/packages/kernel/$kernel_version/$kernel_package_release/$kernel_arch/kernel-devel-$kernel_nevra.rpm"
 	image=$(builder_image)
 
 	if builder_exists && ! $rebuild_builder; then
@@ -305,14 +299,10 @@ prepare_builder()
 		log "Building persistent Fedora $(host_version_id) toolchain image"
 		podman_cmd build \
 			--build-arg "FEDORA_VERSION=$(host_version_id)" \
-			--build-arg "KERNEL_DEVEL_NEVRA=$kernel_nevra" \
-			--build-arg "KERNEL_DEVEL_URL=$kernel_url" \
 			--tag "$image" \
 			--file "$script_dir/sysext/Containerfile" \
 			"$script_dir/sysext"
 	fi
-
-	prepare_sign_file
 }
 
 run_in_builder()
@@ -345,37 +335,9 @@ run_in_builder()
 		--env "PRONK_HOST_ID=$(host_id)" \
 		--env "PRONK_HOST_VERSION_ID=$(host_version_id)" \
 		--env "PRONK_HOST_OSTREE_VERSION=$(host_ostree_version)" \
-		--env "PRONK_HOST_KERNEL_RELEASE=$(kernel_release)" \
 		--env "PRONK_BUILDER_IDENTITY=$image_identity" \
 		"$(builder_image)" \
 		"$@"
-}
-
-prepare_sign_file()
-{
-	local candidate=$state_dir/sign-file.candidate
-	local kernel_sign_file
-	kernel_sign_file="/usr/src/kernels/$(kernel_release)/scripts/sign-file"
-
-	if sudo test -x "$sign_file"; then
-		return
-	fi
-
-	if [[ -x $kernel_sign_file ]]; then
-		log 'Saving the Fedora module signer outside the transient /usr tree'
-		sudo install -d -m 0700 -o root -g root "$signing_dir"
-		sudo install -m 0755 -o root -g root "$kernel_sign_file" "$sign_file"
-		return
-	fi
-
-	log 'Copying the kernel module signer from the build image'
-	rm -f -- "$candidate"
-	run_in_builder install -m 0755 \
-		"/usr/src/kernels/$(kernel_release)/scripts/sign-file" \
-		"$candidate"
-	sudo install -d -m 0700 -o root -g root "$signing_dir"
-	sudo install -m 0755 -o root -g root "$candidate" "$sign_file"
-	rm -f -- "$candidate"
 }
 
 git_revision()
@@ -384,10 +346,7 @@ git_revision()
 	local revision
 	local status
 
-	revision=$(git -C "$tree" rev-parse --short=12 HEAD 2>/dev/null) || {
-		printf 'error: cannot read the Git revision for %s\n' "$tree" >&2
-		return 1
-	}
+	revision=$(git_head_revision "$tree")
 	status=$(git -C "$tree" status --porcelain --untracked-files=normal \
 		--ignore-submodules=all) || {
 		printf 'error: cannot inspect the Git worktree at %s\n' "$tree" >&2
@@ -396,6 +355,18 @@ git_revision()
 	if [[ -n $status ]]; then
 		revision+="-dirty"
 	fi
+	printf '%s\n' "$revision"
+}
+
+git_head_revision()
+{
+	local tree=$1
+	local revision
+
+	revision=$(git -C "$tree" rev-parse --short=12 HEAD 2>/dev/null) || {
+		printf 'error: cannot read the Git revision for %s\n' "$tree" >&2
+		return 1
+	}
 	printf '%s\n' "$revision"
 }
 
@@ -427,9 +398,8 @@ reset_build_if_incompatible()
 	local stamp=$build_dir/.pronk-build-host
 	local expected
 	local actual=
-	printf -v expected '%s\n%s\n%s\n%s' \
+	printf -v expected '%s\n%s\n%s' \
 		"$(host_ostree_version)" \
-		"$(kernel_release)" \
 		"${PRONK_BUILDER_IDENTITY:-$(builder_image)}" \
 		"$build_context"
 
@@ -545,31 +515,6 @@ stage_video_encoder_runtime()
 	rm -rf --one-file-system -- "${package_dir:?}"
 }
 
-build_castkms()
-{
-	local stage=$1
-	local build=$state_dir/builds/castkms
-	local kernel_build
-	kernel_build=/usr/src/kernels/$(kernel_release)
-
-	reset_build_if_incompatible "$build" "kbuild:$castkms_source"
-	log 'Building CastKMS'
-	# Kbuild rejects a separate MO output directory while legacy in-tree
-	# products exist. Remove generated module products only; source and tool
-	# outputs are deliberately left untouched.
-	make -C "$castkms_source" KDIR="$kernel_build" module-clean
-	make -C "$castkms_source" \
-		KDIR="$kernel_build" \
-		MO="$build" \
-		-j"$(jobs)" \
-		W=1
-	if $run_tests; then
-		make -C "$castkms_source" KDIR="$kernel_build" MO="$build" -j"$(jobs)" check
-	fi
-	install -Dm0644 "$build/castkms.ko" \
-		"$stage/usr/lib/modules/$(kernel_release)/extra/castkms.ko"
-}
-
 build_mutter()
 {
 	local stage=$1
@@ -681,32 +626,6 @@ write_extension_metadata()
 		"LIBGXDP_REVISION=$libgxdp_revision" \
 		> "$metadata_dir/manifest"
 
-	install -Dm0755 "$script_dir/sysext/pronk-load-castkms" \
-		"$stage/usr/libexec/pronk-load-castkms"
-}
-
-sign_castkms()
-{
-	local stage=$1
-	local module
-	module=$stage/usr/lib/modules/$(kernel_release)/extra/castkms.ko
-
-	log 'Signing CastKMS with the enrolled local key'
-	sudo test -r "$signing_key" || die "module signing key is missing: $signing_key"
-	sudo test -r "$signing_certificate" || die "module signing certificate is missing: $signing_certificate"
-	sudo test -x "$sign_file" || die "module signing helper is missing: $sign_file (run prepare)"
-
-	if command -v mokutil >/dev/null && mokutil --sb-state 2>/dev/null | grep -q 'SecureBoot enabled'; then
-		# mokutil deliberately returns 1 when a key is already enrolled and 0
-		# when it is not enrolled. Other failures return 255.
-		if sudo mokutil --test-key "$signing_certificate" >/dev/null 2>&1; then
-			die 'the CastKMS module signing certificate is not enrolled'
-		else
-			[[ $? == 1 ]] || die 'could not verify the CastKMS module signing certificate'
-		fi
-	fi
-
-	sudo "$sign_file" sha256 "$signing_key" "$signing_certificate" "$module"
 }
 
 validate_stage()
@@ -714,10 +633,8 @@ validate_stage()
 	local stage=$1
 	local manifest=$stage/usr/lib/pronk-sysext/manifest
 	local manifest_key
-	local module
 	local required
 	local unexpected
-	module=$stage/usr/lib/modules/$(kernel_release)/extra/castkms.ko
 
 	for required in \
 		usr/bin/pronkd \
@@ -725,7 +642,6 @@ validate_stage()
 		usr/bin/gnome-control-center \
 		usr/bin/wireplumber \
 		usr/libexec/pronk/pronk-chromiacast \
-		usr/libexec/pronk-load-castkms \
 		usr/lib64/gstreamer-1.0/libgstx264.so \
 		usr/lib/systemd/user/pronk-chromiacast.socket \
 		usr/lib/extension-release.d/extension-release.pronk \
@@ -737,10 +653,6 @@ validate_stage()
 		die 'staged extension is missing the Mutter shared library'
 	find "$stage/usr/lib64" -name 'libx264.so.*' -type f -print -quit | grep -q . || \
 		die 'staged extension is missing the x264 shared library'
-	[[ -r $module ]] || die "staged extension is missing $module"
-	[[ $(modinfo -F vermagic "$module") == "$(kernel_release) "* ]] || \
-		die 'CastKMS was built for a different kernel'
-	[[ -n $(modinfo -F signer "$module") ]] || die 'the staged CastKMS module is unsigned'
 	for manifest_key in \
 		BUILD_ID \
 		HOST_ID \
@@ -853,7 +765,6 @@ build_in_container()
 	require_source_bundle
 
 	build_wireplumber "$stage"
-	build_castkms "$stage"
 	build_mutter "$stage"
 	build_control_center "$stage"
 	build_pronk "$stage"
@@ -876,11 +787,12 @@ build_extension()
 	ensure_state_directories
 	require_source_bundle
 	builder_exists || die 'the build image is missing; run prepare first'
+	require_pinned_castkms_kernel
 	# Capture provenance on the host because space-saving submodule object
 	# alternates need not be visible inside the isolated build container.
 	packaging_revision=$(git_revision "$packaging_root")
 	pronk_revision=$(git_revision "$pronk_source")
-	castkms_revision=$(git_revision "$castkms_source")
+	castkms_revision=$(git_head_revision "$castkms_source")
 	mutter_revision=$(git_revision "$mutter_source")
 	control_center_revision=$(git_revision "$control_center_source")
 	wireplumber_revision=$(git_revision "$wireplumber_source")
@@ -899,7 +811,6 @@ build_extension()
 		"$mutter_revision" "$control_center_revision" \
 		"$wireplumber_revision" "$gvc_revision" "$gvdb_revision" \
 		"$libgxdp_revision"
-	sign_castkms "$temporary_stage"
 	validate_stage "$temporary_stage"
 	validate_host_abi "$temporary_stage"
 	replace_staged_extension "$temporary_stage"
@@ -962,7 +873,7 @@ install_extension()
 	sudo ln -s "images/$identifier" "$pending_link"
 	sudo mv -Tf "$pending_link" "$extension_store/pronk"
 
-	log 'Installing the boot guard, ephemeral overlay policy, and CastKMS loader unit'
+	log 'Installing the boot guard and ephemeral overlay policy'
 	sudo install -d -m 0755 -o root -g root \
 		/etc/pronk-sysext \
 		/etc/systemd/system-generators \
@@ -974,13 +885,6 @@ install_extension()
 	sudo install -m 0644 -o root -g root \
 		"$script_dir/sysext/80-pronk-dev.conf" \
 		/etc/systemd/sysext.conf.d/80-pronk-dev.conf
-	sudo install -m 0644 -o root -g root \
-		"$script_dir/sysext/pronk-castkms.service" \
-		/etc/systemd/system/pronk-castkms.service
-	# systemctl enable normally reloads the manager, which reruns generators
-	# and would expose the extension during the current (possibly unlocked)
-	# boot. Enable it for the next boot without changing current runtime state.
-	sudo systemctl enable --no-reload pronk-castkms.service
 	sudo env PRONK_SYSEXT_DISABLED=/dev/null \
 		/etc/systemd/system-generators/pronk-sysext-generator
 
@@ -997,24 +901,25 @@ raise SystemExit(not any(d.get("booted") and d.get("unlocked") for d in deployme
 '
 }
 
+castkms_is_available()
+{
+	[[ -d /sys/module/castkms ]]
+}
+
 activate_extension()
 {
 	local manifest=/etc/pronk-sysext/manifest
 
 	[[ ! -e /etc/pronk-sysext/disabled ]] || die 'the Pronk extension is disabled'
 	manifest_matches_host "$manifest" || die 'the installed extension does not match the running deployment and kernel'
+	castkms_is_available || die 'the running kernel does not provide CastKMS'
 	if [[ -e /run/ostree-booted ]] && host_is_unlocked; then
 		die 'the deployment has a transient /usr overlay; reboot instead of stacking a live sysext on it'
 	fi
-	if grep -q '^castkms ' /proc/modules; then
-		die 'CastKMS is already loaded; reboot to replace it together with the desktop stack'
-	fi
-
 	log 'Activating the extension without logging out'
 	sudo systemctl daemon-reload
 	sudo systemd-sysext refresh
 	sudo systemctl daemon-reload
-	sudo systemctl start pronk-castkms.service
 	systemctl --user daemon-reload
 	systemctl --user start pronk-chromiacast.socket
 	systemctl --user restart pipewire.service wireplumber.service
@@ -1063,10 +968,10 @@ show_status()
 	printf '\n'
 	systemd-sysext status 2>&1 || true
 	printf '\nCastKMS: '
-	if grep -q '^castkms ' /proc/modules; then
-		printf 'loaded\n'
+	if castkms_is_available; then
+		printf 'available in the running kernel\n'
 	else
-		printf 'not loaded\n'
+		printf 'not available in the running kernel\n'
 	fi
 	printf 'Pronk socket: '
 	systemctl --user is-active pronk-chromiacast.socket 2>/dev/null || true
@@ -1074,13 +979,10 @@ show_status()
 
 check_scripts()
 {
-	local target
-	local unit_fixture
 	local sysext_config=$script_dir/sysext/80-pronk-dev.conf
 	local shellcheck_files=(
 		"$script_dir/pronk-dev-sysext"
 		"$script_dir/sysext/pronk-sysext-generator"
-		"$script_dir/sysext/pronk-load-castkms"
 		"$packaging_root/tests/sysext/check-dev-sysext"
 	)
 
@@ -1101,37 +1003,6 @@ check_scripts()
 	log 'Checking the system extension mutability policy'
 	grep -Fxq '[SysExt]' "$sysext_config"
 	grep -Fxq 'Mutable=ephemeral' "$sysext_config"
-	log 'Checking the system unit'
-	unit_fixture=$(mktemp -d)
-	install -Dm0644 "$script_dir/sysext/pronk-castkms.service" \
-		"$unit_fixture/etc/systemd/system/pronk-castkms.service"
-	install -Dm0755 "$script_dir/sysext/pronk-load-castkms" \
-		"$unit_fixture/usr/libexec/pronk-load-castkms"
-	for target in basic.target display-manager.service shutdown.target sysinit.target; do
-		install -Dm0644 /dev/null "$unit_fixture/usr/lib/systemd/system/$target"
-		printf '[Unit]\nDescription=Verification stub\n' \
-			> "$unit_fixture/usr/lib/systemd/system/$target"
-	done
-	printf '%s\n' \
-		'[Unit]' \
-		'Description=Verification stub' \
-		'[Service]' \
-		'Type=oneshot' \
-		'ExecStart=/usr/libexec/pronk-load-castkms' \
-		> "$unit_fixture/usr/lib/systemd/system/display-manager.service"
-	printf '%s\n' \
-		'[Unit]' \
-		'Description=Verification stub' \
-		'DefaultDependencies=no' \
-		'[Service]' \
-		'Type=oneshot' \
-		'ExecStart=/usr/libexec/pronk-load-castkms' \
-		> "$unit_fixture/usr/lib/systemd/system/systemd-sysext.service"
-	if ! systemd-analyze verify --root="$unit_fixture" pronk-castkms.service; then
-		rm -rf --one-file-system -- "${unit_fixture:?}"
-		return 1
-	fi
-	rm -rf --one-file-system -- "${unit_fixture:?}"
 }
 
 while (($# > 0)); do

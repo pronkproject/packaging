@@ -1,0 +1,189 @@
+#!/usr/bin/env bash
+# SPDX-License-Identifier: MIT
+
+set -euo pipefail
+
+script_dir=$(CDPATH='' cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd -P)
+packaging_root=$(CDPATH='' cd -- "$script_dir/.." && pwd -P)
+kernel_source=$packaging_root/sources/castkms
+state_base=${XDG_STATE_HOME:-$HOME/.local/state}
+build_dir=${PRONK_KERNEL_BUILD_DIR:-$state_base/pronk-kernel/build}
+config_source=${PRONK_KERNEL_CONFIG:-/usr/lib/modules/$(uname -r)/config}
+
+die()
+{
+	printf 'error: %s\n' "$*" >&2
+	exit 1
+}
+
+usage()
+{
+	cat <<EOF
+Usage: scripts/build-castkms-kernel [OUTPUT_DIRECTORY]
+
+Build binary RPMs for the complete kernel pinned by sources/castkms. The
+running kernel's configuration is used by default; set PRONK_KERNEL_CONFIG to
+use another configuration and PRONK_KERNEL_BUILD_DIR to move build products.
+Set PRONK_KERNEL_RUSTC to select a specific Rust compiler.
+EOF
+}
+
+jobs()
+{
+	local processors memory_kib memory_jobs selected
+
+	if [[ -n ${PRONK_BUILD_JOBS:-} ]]; then
+		[[ $PRONK_BUILD_JOBS =~ ^[1-9][0-9]*$ ]] || \
+			die 'PRONK_BUILD_JOBS must be a positive integer'
+		printf '%s\n' "$PRONK_BUILD_JOBS"
+		return
+	fi
+
+	processors=$(nproc)
+	memory_kib=$(awk '/^MemAvailable:/ { print $2 }' /proc/meminfo)
+	memory_jobs=$((memory_kib / 2097152))
+	((memory_jobs > 0)) || memory_jobs=1
+	selected=$processors
+	((selected <= memory_jobs)) || selected=$memory_jobs
+	((selected <= 8)) || selected=8
+	printf '%s\n' "$selected"
+}
+
+require_command()
+{
+	command -v "$1" >/dev/null 2>&1 || die "required command is missing: $1"
+}
+
+if (($# > 0)) && [[ $1 == -h || $1 == --help ]]; then
+	usage
+	exit 0
+fi
+(($# <= 1)) || { usage >&2; exit 2; }
+
+case $build_dir in
+/|"$HOME"|"$packaging_root"|"$kernel_source"|"")
+	die "refusing unsafe kernel build directory: $build_dir"
+	;;
+esac
+mkdir -p -- "$build_dir"
+build_dir=$(CDPATH='' cd -- "$build_dir" && pwd -P)
+case $build_dir in
+/|"$HOME"|"$packaging_root"|"$kernel_source")
+	die "refusing unsafe kernel build directory: $build_dir"
+	;;
+esac
+require_command flock
+exec {build_lock_fd}>"$build_dir/.pronk-build-lock"
+flock -n "$build_lock_fd" || \
+	die "another kernel build is using $build_dir"
+mkdir -p -- "$build_dir/tmp"
+TMPDIR=$build_dir/tmp
+export TMPDIR
+
+output_dir=${1:-$PWD}
+mkdir -p -- "$output_dir"
+output_dir=$(CDPATH='' cd -- "$output_dir" && pwd -P)
+
+for command in gcc git ld make rpmbuild rpm sha256sum tar; do
+	require_command "$command"
+done
+[[ -r $config_source ]] || die "kernel configuration is missing: $config_source"
+[[ -f $kernel_source/Makefile ]] || \
+	die 'CastKMS kernel submodule is not initialized'
+
+"$script_dir/check-compatibility"
+git -C "$kernel_source" diff --quiet --ignore-submodules -- || \
+	die 'the pinned kernel has uncommitted tracked changes'
+git -C "$kernel_source" diff --cached --quiet --ignore-submodules -- || \
+	die 'the pinned kernel has staged changes'
+
+revision=$(git -C "$kernel_source" rev-parse --short=12 HEAD)
+if [[ -n ${PRONK_KERNEL_RUSTC:-} ]]; then
+	RUSTC=$PRONK_KERNEL_RUSTC
+elif command -v rustup >/dev/null 2>&1 && \
+	RUSTC=$(rustup which --toolchain stable rustc 2>/dev/null); then
+	:
+else
+	RUSTC=$(command -v rustc) || die 'required command is missing: rustc'
+fi
+[[ -x $RUSTC ]] || die "Rust compiler is not executable: $RUSTC"
+PATH=$(dirname -- "$RUSTC"):$PATH
+export PATH
+export RUSTC
+
+source_dir=$build_dir.source-$revision
+[[ ! -e $source_dir || -f $source_dir/Makefile ]] || \
+	die "managed kernel source is incomplete: $source_dir"
+if [[ ! -f $source_dir/Makefile ]]; then
+	temporary_source=$(mktemp -d "$source_dir.tmp.XXXXXX")
+	trap 'rm -rf --one-file-system -- "$temporary_source"' EXIT
+	printf '==> Materializing pinned CastKMS kernel source\n'
+	git -C "$kernel_source" archive HEAD | tar -x -C "$temporary_source"
+	mv -- "$temporary_source" "$source_dir"
+	trap - EXIT
+fi
+
+build_identity=$({
+	printf '%s\n' "$revision"
+	"$RUSTC" --version --verbose
+	gcc --version
+	ld --version
+	make --version
+	rpmbuild --version
+	sha256sum "$config_source"
+	sha256sum "$script_dir/build-castkms-kernel"
+} | sha256sum)
+build_identity=${build_identity%% *}
+identity_file=$build_dir/.pronk-build-identity
+previous_identity=
+[[ ! -r $identity_file ]] || previous_identity=$(<"$identity_file")
+if [[ $previous_identity != "$build_identity" ]]; then
+	printf '==> Resetting kernel products for a new build identity\n'
+	make -C "$source_dir" O="$build_dir" RUSTC="$RUSTC" mrproper
+	rm -rf --one-file-system -- "$build_dir/rpmbuild"
+fi
+cp -- "$config_source" "$build_dir/.config"
+
+config_tool=$source_dir/scripts/config
+"$config_tool" --file "$build_dir/.config" \
+	--disable LOCALVERSION_AUTO \
+	--set-str LOCALVERSION "-pronk-g$revision" \
+	--enable RUST \
+	--enable DRM \
+	--enable DRM_KMS_HELPER \
+	--enable DRM_GEM_SHMEM_HELPER \
+	--enable DRM_CASTKMS \
+	--disable DRM_CASTKMS_AUDIO \
+	--disable DRM_CASTKMS_KUNIT_TEST \
+	--disable KUNIT
+
+parallelism=$(jobs)
+printf '==> Preparing CastKMS kernel configuration\n'
+make -C "$source_dir" O="$build_dir" RUSTC="$RUSTC" \
+	-j"$parallelism" olddefconfig
+for setting in \
+	CONFIG_RUST=y \
+	CONFIG_DRM_CASTKMS=y; do
+	grep -Fxq "$setting" "$build_dir/.config" || \
+		die "kernel configuration did not retain $setting"
+done
+for setting in \
+	CONFIG_DRM_CASTKMS_AUDIO \
+	CONFIG_DRM_CASTKMS_KUNIT_TEST \
+	CONFIG_KUNIT; do
+	! grep -q "^$setting=" "$build_dir/.config" || \
+		die "kernel configuration unexpectedly enabled $setting"
+done
+printf '%s\n' "$build_identity" > "$identity_file"
+
+printf '==> Building CastKMS kernel RPMs with %s parallel jobs\n' "$parallelism"
+make -C "$source_dir" O="$build_dir" RUSTC="$RUSTC" \
+	-j"$parallelism" binrpm-pkg
+
+mapfile -d '' packages < <(find "$build_dir/rpmbuild/RPMS" -type f -name '*.rpm' -print0)
+((${#packages[@]} > 0)) || die 'the kernel build produced no binary RPMs'
+for package in "${packages[@]}"; do
+	destination=$output_dir/${package##*/}
+	cp -- "$package" "$destination"
+	printf '%s\n' "$destination"
+done

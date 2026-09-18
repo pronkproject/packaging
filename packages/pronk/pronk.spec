@@ -2,7 +2,7 @@
 
 Name:           pronk
 Version:        0.1.0
-Release:        7%{?dist}
+Release:        8%{?dist}
 Summary:        Use Google Cast devices as managed desktop displays
 
 License:        MIT
@@ -10,7 +10,7 @@ URL:            https://github.com/pronkproject/pronk
 Source0:        %{name}-%{version}.tar.gz
 Source1:        %{name}-%{version}-vendor.tar.xz
 
-BuildRequires:  cargo >= 1.83
+BuildRequires:  cargo >= 1.85
 BuildRequires:  clang-devel
 BuildRequires:  dbus-daemon
 BuildRequires:  edid-decode
@@ -33,7 +33,6 @@ BuildRequires:  xz
 
 Requires:       pipewire >= %{pipewire_version}
 Requires:       pipewire-gstreamer
-Requires:       polkit
 Requires:       systemd
 Requires:       wireplumber >= 0.5.15
 Requires:       gstreamer1-plugins-base
@@ -43,8 +42,6 @@ Requires:       gstreamer1-plugins-good
 # requirement makes a missing encoder an installation error instead of a
 # casting failure after setup.
 Requires:       gstreamer1-plugins-ugly
-Recommends:     akmod-castkms >= 0.12.0
-
 %description
 Pronk coordinates an experimental CastKMS virtual monitor with an isolated
 Google Cast backend. GNOME treats the Device as an ordinary extended display,
@@ -58,6 +55,7 @@ tar -xJf %{SOURCE1}
 
 
 %build
+export PATH=%{_bindir}:$PATH
 export CARGO_NET_OFFLINE=true
 %meson -Dcargo-profile=release
 %meson_build
@@ -74,6 +72,7 @@ ln -s ../pronk-chromiacast.socket \
 
 
 %check
+export PATH=%{_bindir}:$PATH
 runtime_dir=$(mktemp -d)
 trap 'rm -rf "$runtime_dir"' EXIT
 chmod 0700 "$runtime_dir"
@@ -86,17 +85,8 @@ XDG_RUNTIME_DIR="$runtime_dir" CARGO_NET_OFFLINE=true dbus-run-session -- \
 %doc README.md
 %{_bindir}/pronkctl
 %{_bindir}/pronkd
-%{_libexecdir}/pronk-grant-helper
 %{_libexecdir}/pronk/
 %{_prefix}/lib/pronk/
-%{_unitdir}/pronk.service
-%{_unitdir}/pronk-backend-mock.socket
-%{_unitdir}/pronk-backend-mock@.service
-%{_unitdir}/pronk-chromiacast.socket
-%{_unitdir}/pronk-chromiacast@.service
-%{_unitdir}/pronk-pipewire.service
-%{_unitdir}/pronk-pipewire.socket
-%{_unitdir}/pronk-wireplumber.service
 %{_userunitdir}/pronk.service
 %{_userunitdir}/pronk-backend-mock.socket
 %{_userunitdir}/pronk-backend-mock@.service
@@ -106,15 +96,9 @@ XDG_RUNTIME_DIR="$runtime_dir" CARGO_NET_OFFLINE=true dbus-run-session -- \
 %{_userunitdir}/pronk-pipewire.socket
 %{_userunitdir}/pronk-wireplumber.service
 %{_userunitdir}/sockets.target.wants/pronk-chromiacast.socket
-%{_sysusersdir}/pronk.conf
-%{_tmpfilesdir}/pronk.conf
 %{_datadir}/dbus-1/interfaces/io.github.pronkproject.Pronk1.xml
 %{_datadir}/dbus-1/services/io.github.pronkproject.Pronk1.service
-%{_datadir}/dbus-1/system-services/io.github.pronkproject.Pronk1.service
-%{_datadir}/dbus-1/system.d/io.github.pronkproject.Pronk1.conf
 %{_datadir}/pipewire/pipewire.conf.d/80-pronk-remotes.conf
-%{_datadir}/polkit-1/actions/io.github.pronkproject.Pronk.policy
-%{_datadir}/polkit-1/rules.d/20-pronk.rules
 %{_datadir}/wireplumber/scripts/pronk-cast-audio-default.lua
 %{_datadir}/wireplumber/scripts/pronk-policy-marker.lua
 %{_datadir}/wireplumber/scripts/pronk-private-policy.lua
@@ -123,6 +107,9 @@ XDG_RUNTIME_DIR="$runtime_dir" CARGO_NET_OFFLINE=true dbus-run-session -- \
 
 
 %changelog
+* Thu Sep 17 2026 Ray Strode <rstrode@redhat.com> - 0.1.0-8
+- Add delegated rendering and end-to-end receiver qualification
+
 * Thu Sep 03 2026 Ray Strode <rstrode@redhat.com> - 0.1.0-7
 - Build against Chromiacast 0.3.1 receiver-driven feedback notifications
 

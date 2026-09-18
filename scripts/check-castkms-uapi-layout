@@ -7,8 +7,11 @@ root=$(CDPATH='' cd -- "$(dirname -- "$0")/.." && pwd)
 temporary=$(mktemp -d)
 trap 'rm -rf -- "$temporary"' EXIT HUP INT TERM
 
+make -s -C "$root/sources/castkms" \
+  INSTALL_HDR_PATH="$temporary/headers" headers_install
+
 cc -std=c11 -Wall -Wextra -Werror \
-  -I"$root/sources/castkms/include/uapi" \
+  -I"$temporary/headers/include" \
   -I/usr/include/libdrm \
   "$root/scripts/probes/castkms-uapi-layout.c" \
   -o "$temporary/castkms-uapi-layout"
@@ -19,8 +22,8 @@ cargo run --quiet --locked \
   -p castkms-sys --example uapi-layout >"$temporary/rust-layout"
 
 if ! diff -u "$temporary/c-layout" "$temporary/rust-layout"; then
-  echo "CastKMS C and Rust UAPI layouts differ" >&2
+  echo "CastKMS C and Rust renderer UAPI definitions differ" >&2
   exit 1
 fi
 
-echo "CastKMS C and Rust UAPI layouts match"
+echo "CastKMS C and Rust renderer UAPI definitions match"

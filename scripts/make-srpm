@@ -5,7 +5,7 @@ set -eu
 usage()
 {
   printf 'usage: %s PACKAGE [OUTPUT_DIRECTORY]\n' "$0" >&2
-  printf 'packages: pronk castkms-kmod wireplumber mutter gnome-control-center\n' >&2
+  printf 'packages: pronk wireplumber mutter gnome-control-center\n' >&2
   exit 2
 }
 
@@ -74,13 +74,6 @@ case $package in
 pronk)
   "$repository_root/scripts/make-pronk-sources" \
     "$repository_root/sources/pronk" "$spec" "$work_dir/SOURCES"
-  ;;
-castkms-kmod)
-  commit=$(spec_macro commit)
-  test -n "$commit"
-  assert_head "$repository_root/sources/castkms" "$commit"
-  archive_gzip "$repository_root/sources/castkms" "$commit" "castkms-$commit" \
-    "$work_dir/SOURCES/castkms-$commit.tar.gz"
   ;;
 wireplumber)
   version=$(sed -n 's/^Version:[[:space:]]*//p' "$spec")
