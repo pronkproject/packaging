@@ -160,6 +160,8 @@ Patch0228:      0129-native-Honor-active-plane-constraints-for-cursors.patch
 Patch0229:      0130-kms-Accept-the-kernel-constraints-format-bound.patch
 Patch0230:      0131-kms-Honor-plane-geometry-constraints.patch
 Patch0231:      0132-kms-Honor-conditional-YUV-property-constraints.patch
+Patch0232:      0133-kms-Honor-framebuffer-allocation-alignments.patch
+Patch0233:      0134-backends-native-Accept-CastKMS-CEC-monitor-support.patch
 
 %gnome_check_version
 

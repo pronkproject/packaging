@@ -89,6 +89,10 @@ constant_checks = {
         pronk / "crates/castkms-monitor/src/lib.rs",
         "VERSION",
     ),
+    "castkms_monitor_cec_cap": (
+        pronk / "crates/castkms-monitor/src/lib.rs",
+        "CAP_CEC",
+    ),
     "castkms_renderer_version": (
         pronk / "crates/castkms-sys/src/lib.rs",
         "RENDERER_VERSION",
@@ -171,6 +175,13 @@ cross_component_defines = [
         mutter_uapi / "meta-drm-castkms.h",
         "DRM_CASTKMS_MONITOR_CONTROL_VERSION",
         "castkms_monitor_control_version",
+    ),
+    (
+        "CastKMS monitor CEC capability",
+        castkms_uapi / "castkms_drm.h",
+        mutter_uapi / "meta-drm-castkms.h",
+        "DRM_CASTKMS_MONITOR_CAP_CEC",
+        "castkms_monitor_cec_cap",
     ),
     (
         "CastKMS renderer version",
