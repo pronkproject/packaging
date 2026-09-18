@@ -64,11 +64,11 @@ scripts/build-castkms-kernel ./rpms
 ```
 
 The builder starts with the running kernel's configuration, enables built-in
-CastKMS, and gives the result a revision-derived release name. CastKMS audio is
-disabled while its kernel interface is under development, and KUnit test
-modules remain part of separate validation builds. Set `PRONK_KERNEL_CONFIG`
-to start from another configuration and
-`PRONK_KERNEL_BUILD_DIR` to relocate the persistent build directory.
+CastKMS, strips module debug information before signing, and gives the result
+a revision-derived release name. CastKMS audio is disabled while its kernel
+interface is under development, and KUnit test modules remain part of separate
+validation builds. Set `PRONK_KERNEL_CONFIG` to start from another configuration
+and `PRONK_KERNEL_BUILD_DIR` to relocate the persistent build directory.
 `PRONK_KERNEL_RUSTC` selects a specific compiler; otherwise the builder prefers
 the installed stable rustup toolchain. The builder keeps compiler temporary
 files with its persistent products and rejects concurrent use of the same build

@@ -178,7 +178,8 @@ printf '%s\n' "$build_identity" > "$identity_file"
 
 printf '==> Building CastKMS kernel RPMs with %s parallel jobs\n' "$parallelism"
 make -C "$source_dir" O="$build_dir" RUSTC="$RUSTC" \
-	-j"$parallelism" binrpm-pkg
+	-j"$parallelism" \
+	RPMOPTS="--define='install_mod_strip 1'" binrpm-pkg
 
 mapfile -d '' packages < <(find "$build_dir/rpmbuild/RPMS" -type f -name '*.rpm' -print0)
 ((${#packages[@]} > 0)) || die 'the kernel build produced no binary RPMs'
