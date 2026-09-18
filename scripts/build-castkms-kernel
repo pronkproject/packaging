@@ -25,6 +25,8 @@ Build binary RPMs for the complete kernel pinned by sources/castkms. The
 running kernel's configuration is used by default; set PRONK_KERNEL_CONFIG to
 use another configuration and PRONK_KERNEL_BUILD_DIR to move build products.
 Set PRONK_KERNEL_RUSTC to select a specific Rust compiler.
+Set PRONK_KERNEL_SIGNING_KEY and PRONK_KERNEL_SIGNING_CERT together to sign the
+boot image for Secure Boot. The certificate may use PEM or DER encoding.
 EOF
 }
 
@@ -84,12 +86,26 @@ output_dir=${1:-$PWD}
 mkdir -p -- "$output_dir"
 output_dir=$(CDPATH='' cd -- "$output_dir" && pwd -P)
 
-for command in gcc git ld make rpmbuild rpm sha256sum tar; do
+for command in awk gcc git ld make rpmbuild rpm sha256sum tar; do
 	require_command "$command"
 done
 [[ -r $config_source ]] || die "kernel configuration is missing: $config_source"
 [[ -f $kernel_source/Makefile ]] || \
 	die 'CastKMS kernel submodule is not initialized'
+
+signing_key=${PRONK_KERNEL_SIGNING_KEY:-}
+signing_cert=${PRONK_KERNEL_SIGNING_CERT:-}
+if [[ -n $signing_key && -z $signing_cert ]] || \
+		[[ -z $signing_key && -n $signing_cert ]]; then
+	die 'PRONK_KERNEL_SIGNING_KEY and PRONK_KERNEL_SIGNING_CERT must be set together'
+fi
+if [[ -n $signing_key ]]; then
+	for command in openssl sbsign sbverify; do
+		require_command "$command"
+	done
+	[[ -r $signing_key ]] || die "kernel signing key is unreadable: $signing_key"
+	[[ -r $signing_cert ]] || die "kernel signing certificate is unreadable: $signing_cert"
+fi
 
 "$script_dir/check-compatibility"
 git -C "$kernel_source" diff --quiet --ignore-submodules -- || \
@@ -132,6 +148,11 @@ build_identity=$({
 	rpmbuild --version
 	sha256sum "$config_source"
 	sha256sum "$script_dir/build-castkms-kernel"
+	if [[ -n $signing_cert ]]; then
+		sha256sum "$signing_cert"
+	else
+		printf '%s\n' unsigned
+	fi
 } | sha256sum)
 build_identity=${build_identity%% *}
 identity_file=$build_dir/.pronk-build-identity
@@ -177,9 +198,46 @@ done
 printf '%s\n' "$build_identity" > "$identity_file"
 
 printf '==> Building CastKMS kernel RPMs with %s parallel jobs\n' "$parallelism"
+spec=$build_dir/rpmbuild/SPECS/kernel.spec
 make -C "$source_dir" O="$build_dir" RUSTC="$RUSTC" \
-	-j"$parallelism" \
-	RPMOPTS="--define='install_mod_strip 1'" binrpm-pkg
+	-j"$parallelism" rpmbuild/SPECS/kernel.spec
+if [[ -n $signing_key ]]; then
+	mkdir -p -- "$build_dir/rpmbuild/SOURCES"
+	install -m 0755 "$script_dir/sign-kernel-image" \
+		"$build_dir/rpmbuild/SOURCES/pronk-sign-kernel-image"
+	# shellcheck disable=SC2016 # Match the RPM spec language literally.
+	install_marker='cp $(%{make} %{makeflags} -s image_name) %{buildroot}/lib/modules/%{KERNELRELEASE}/vmlinuz'
+	# shellcheck disable=SC2016 # Expand these variables in the RPM install shell.
+	install_hook='%{_sourcedir}/pronk-sign-kernel-image "$PRONK_KERNEL_SIGNING_KEY" "$PRONK_KERNEL_SIGNING_CERT" %{buildroot}/lib/modules/%{KERNELRELEASE}/vmlinuz'
+	modified_spec=$(mktemp "$build_dir/tmp/kernel.spec.XXXXXX")
+	trap 'rm -f -- "$modified_spec"' EXIT
+	awk -v marker="$install_marker" -v hook="$install_hook" '
+		{ print }
+		$0 == marker { print hook; matches++ }
+		END { if (matches != 1) exit 1 }
+	' "$spec" > "$modified_spec" || \
+		die 'could not add the image-signing step to the kernel RPM spec'
+	mv -- "$modified_spec" "$spec"
+	trap - EXIT
+	export PRONK_KERNEL_SIGNING_KEY=$signing_key
+	export PRONK_KERNEL_SIGNING_CERT=$signing_cert
+fi
+
+rpm_target=$(rpm --eval '%{_arch}')-linux
+rpmbuild_args=(
+	-bb "$spec"
+	"--define=_topdir $build_dir/rpmbuild"
+	--target "$rpm_target"
+	--build-in-place
+	--noprep
+	"--define=_smp_mflags -j$parallelism"
+	'--define=install_mod_strip 1'
+)
+rpm -q rpm >/dev/null 2>&1 || rpmbuild_args+=(--nodeps)
+(
+	cd "$build_dir"
+	rpmbuild "${rpmbuild_args[@]}"
+)
 
 mapfile -d '' packages < <(find "$build_dir/rpmbuild/RPMS" -type f -name '*.rpm' -print0)
 ((${#packages[@]} > 0)) || die 'the kernel build produced no binary RPMs'

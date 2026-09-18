@@ -25,6 +25,7 @@ scripts/generate-patches sources/gnome-control-center \
 shellcheck scripts/build-castkms-kernel scripts/check-castkms-uapi-layout \
   scripts/generate-patches \
   scripts/make-pronk-sources scripts/make-srpm scripts/pronk-dev-sysext \
+  scripts/sign-kernel-image \
   scripts/sysext/pronk-sysext-generator tests/sysext/check-dev-sysext
 ```
 

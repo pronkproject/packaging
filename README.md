@@ -80,6 +80,20 @@ not use an extension built for another kernel release. The extension builder
 checks both the revision embedded in the running kernel's release and the
 presence of built-in CastKMS before it starts a userspace build.
 
+On a Secure Boot system, provide a private key and its enrolled certificate:
+
+```sh
+PRONK_KERNEL_SIGNING_KEY=/path/to/private-key.pem \
+PRONK_KERNEL_SIGNING_CERT=/path/to/certificate.der \
+scripts/build-castkms-kernel ./rpms
+```
+
+Both variables are required together. The certificate may use PEM or DER
+encoding. The builder records its digest in the build identity, embeds and
+verifies the image signature before packaging, and never copies the private key
+into the build or package output. Enrolling a new certificate remains an
+explicit machine-administration step outside this helper.
+
 Reboot normally after `deploy`. At early boot, a generator exposes the image
 only when both the exact Silverblue deployment and the running kernel match its
 manifest. A system or kernel update therefore falls back to the stock desktop

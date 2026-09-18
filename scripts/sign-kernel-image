@@ -1,0 +1,48 @@
+#!/usr/bin/env bash
+# SPDX-License-Identifier: MIT
+
+set -euo pipefail
+
+if (($# != 3)); then
+	printf 'Usage: %s PRIVATE_KEY CERTIFICATE KERNEL_IMAGE\n' "${0##*/}" >&2
+	exit 2
+fi
+
+key=$1
+certificate=$2
+image=$3
+
+for command in openssl sbsign sbverify; do
+	command -v "$command" >/dev/null 2>&1 || {
+		printf 'error: required command is missing: %s\n' "$command" >&2
+		exit 1
+	}
+done
+[[ -r $key ]] || { printf 'error: private key is unreadable: %s\n' "$key" >&2; exit 1; }
+[[ -r $certificate ]] || {
+	printf 'error: certificate is unreadable: %s\n' "$certificate" >&2
+	exit 1
+}
+[[ -f $image ]] || { printf 'error: kernel image is missing: %s\n' "$image" >&2; exit 1; }
+
+temporary_dir=${TMPDIR:-${image%/*}}
+normalized_certificate=$(mktemp "$temporary_dir/kernel-certificate.XXXXXX")
+signed_image=$(mktemp "$temporary_dir/kernel-image.XXXXXX")
+trap 'rm -f -- "$normalized_certificate" "$signed_image"' EXIT
+
+if ! openssl x509 -in "$certificate" -out "$normalized_certificate" 2>/dev/null; then
+	openssl x509 -inform DER -in "$certificate" -out "$normalized_certificate"
+fi
+
+if sbverify --cert "$normalized_certificate" "$image" >/dev/null 2>&1; then
+	exit 0
+fi
+sbsign --key "$key" --cert "$normalized_certificate" \
+	--output "$signed_image" "$image"
+sbverify --cert "$normalized_certificate" "$signed_image" >/dev/null 2>&1 || {
+	printf 'error: signed kernel image failed verification\n' >&2
+	exit 1
+}
+mv -- "$signed_image" "$image"
+trap - EXIT
+rm -f -- "$normalized_certificate"
