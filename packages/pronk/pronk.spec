@@ -15,6 +15,7 @@ BuildRequires:  clang-devel
 BuildRequires:  dbus-daemon
 BuildRequires:  edid-decode
 BuildRequires:  gcc
+BuildRequires:  gtk3-devel
 BuildRequires:  jq
 BuildRequires:  meson >= 1.4
 BuildRequires:  pipewire-gstreamer
