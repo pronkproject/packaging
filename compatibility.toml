@@ -1,7 +1,7 @@
 format_version = 1
 
 [components]
-pronk_commit = "2e031a3f39259d1061a7cc6c48345d7c0240bdb7"
+pronk_commit = "c6bfb26c6c60e27f35a519202bb1823449f82075"
 castkms_commit = "53b32735b66ba2dd1bf56c3d967ad0b8a72df5f5"
 mutter_commit = "f4ada9574b946df50fcc0074de6dd8e109bcad9b"
 gnome_control_center_commit = "db25fc88934931b7aaf63070000604580079cb08"
@@ -33,7 +33,7 @@ pronk_max_metadata_key_bytes = 64
 pronk_max_metadata_value_bytes = 256
 pronk_max_operation_error_bytes = 512
 pronk_max_media_error_bytes = 512
-backend_protocol_major = 4
+backend_protocol_major = 5
 backend_protocol_minor = 0
 
 [requirements]
