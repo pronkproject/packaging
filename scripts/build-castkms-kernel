@@ -200,7 +200,15 @@ printf '%s\n' "$build_identity" > "$identity_file"
 printf '==> Building CastKMS kernel RPMs with %s parallel jobs\n' "$parallelism"
 spec=$build_dir/rpmbuild/SPECS/kernel.spec
 make -C "$source_dir" O="$build_dir" RUSTC="$RUSTC" \
-	-j"$parallelism" rpmbuild/SPECS/kernel.spec
+	-j"$parallelism" prepare
+(
+	cd "$build_dir"
+	ARCH=x86 \
+	KERNELRELEASE=$(make -s -f "$source_dir/Makefile" O="$build_dir" \
+		RUSTC="$RUSTC" kernelrelease) \
+	srctree=$source_dir \
+		"$source_dir/scripts/package/mkspec" "$spec"
+)
 if [[ -n $signing_key ]]; then
 	mkdir -p -- "$build_dir/rpmbuild/SOURCES"
 	install -m 0755 "$script_dir/sign-kernel-image" \
