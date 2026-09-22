@@ -903,7 +903,10 @@ raise SystemExit(not any(d.get("booted") and d.get("unlocked") for d in deployme
 
 castkms_is_available()
 {
-	[[ -d /sys/module/castkms ]]
+	# A modular CastKMS driver has the usual module directory.  The production
+	# kernel package builds it in, though, so no /sys/module entry exists even
+	# while its faux platform device and DRM node are live.
+	[[ -d /sys/module/castkms || -d /sys/devices/faux/castkms/drm ]]
 }
 
 activate_extension()
