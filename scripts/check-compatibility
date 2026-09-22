@@ -98,6 +98,7 @@ repositories = {
     "gsettings_desktop_schemas_commit": root / "sources/gsettings-desktop-schemas",
     "gtk4_commit": root / "sources/gtk",
     "accountsservice_commit": root / "sources/accountsservice",
+    "accountsservice_compat_commit": root / "sources/accountsservice-compat",
     "gnome_desktop_commit": root / "sources/gnome-desktop",
     "qrcodegen_commit": root / "sources/qrcodegen",
 }
@@ -134,6 +135,15 @@ if accountsservice_base is None:
     fail("cannot find the AccountsService source base")
 if accountsservice_base.group(1) != components["accountsservice_commit"]:
     fail("AccountsService RPM source base differs from the compatibility manifest")
+
+accountsservice_compat_spec = (root / "packages/accountsservice-compat/accountsservice-compat.spec").read_text()
+accountsservice_compat_base = re.search(
+    r"^%global pronk_base[ \t]+([0-9a-f]{40})$", accountsservice_compat_spec, re.MULTILINE
+)
+if accountsservice_compat_base is None:
+    fail("cannot find the AccountsService compatibility source base")
+if accountsservice_compat_base.group(1) != components["accountsservice_compat_commit"]:
+    fail("AccountsService compatibility RPM source base differs from the compatibility manifest")
 
 gnome_desktop_spec = (root / "packages/gnome-desktop3/gnome-desktop3.spec").read_text()
 gnome_desktop_base = re.search(

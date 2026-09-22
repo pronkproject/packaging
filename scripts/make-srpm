@@ -5,7 +5,7 @@ set -eu
 usage()
 {
   printf 'usage: %s PACKAGE [OUTPUT_DIRECTORY]\n' "$0" >&2
-  printf 'packages: pronk wireplumber gsettings-desktop-schemas gtk4 accountsservice gnome-desktop3 mutter gnome-control-center\n' >&2
+  printf 'packages: pronk wireplumber gsettings-desktop-schemas gtk4 accountsservice accountsservice-compat gnome-desktop3 mutter gnome-control-center\n' >&2
   exit 2
 }
 
@@ -95,6 +95,14 @@ accountsservice)
   assert_head "$repository_root/sources/accountsservice" "$base"
   archive_bzip2 "$repository_root/sources/accountsservice" "$base" "accountsservice-$base" \
     "$work_dir/SOURCES/accountsservice-$base.tar.bz2"
+  ;;
+accountsservice-compat)
+  base=$(spec_macro pronk_base)
+  test -n "$base"
+  assert_head "$repository_root/sources/accountsservice-compat" "$base"
+  archive_bzip2 "$repository_root/sources/accountsservice-compat" "$base" "accountsservice-$base" \
+    "$work_dir/SOURCES/accountsservice-$base.tar.bz2"
+  cp "$repository_root"/packages/accountsservice-compat/*.patch "$work_dir/SOURCES/"
   ;;
 gnome-desktop3)
   base=$(spec_macro pronk_base)

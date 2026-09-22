@@ -41,3 +41,7 @@
 [submodule "sources/qrcodegen"]
 	path = sources/qrcodegen
 	url = https://github.com/nayuki/QR-Code-generator.git
+[submodule "sources/accountsservice-compat"]
+	path = sources/accountsservice-compat
+	url = https://gitlab.freedesktop.org/accountsservice/accountsservice.git
+	branch = 23.13.9

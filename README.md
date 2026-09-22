@@ -8,7 +8,8 @@ Control Center patch series directly from their pinned branches with
 
 The package set contains Pronk, replacement Mutter and GNOME Control Center
 packages, WirePlumber 0.5.15, GNOME 51 desktop schemas, GTK 4.23,
-AccountsService 26.27.3, and GNOME desktop 51. The additional GVDB,
+AccountsService 26.27.3, its soname 0 compatibility library, and GNOME
+desktop 51. The additional GVDB,
 libgnome-volume-control, and libgxdp submodules supply content omitted from
 GitLab-generated source archives. The CastKMS submodule pins the complete
 kernel source that supplies both the driver and its DRM infrastructure; it is
@@ -134,6 +135,7 @@ scripts/make-srpm wireplumber ./srpms
 scripts/make-srpm gsettings-desktop-schemas ./srpms
 scripts/make-srpm gtk4 ./srpms
 scripts/make-srpm accountsservice ./srpms
+scripts/make-srpm accountsservice-compat ./srpms
 scripts/make-srpm gnome-desktop3 ./srpms
 scripts/make-srpm mutter ./srpms
 scripts/make-srpm gnome-control-center ./srpms
@@ -152,9 +154,9 @@ Select a suitable installed rustup toolchain with `CARGO_TOOLCHAIN=stable` when
 the system Cargo is older. Binary package builds consume only the resulting
 SRPMs and do not contact source hosting or crates.io.
 
-Build GNOME desktop schemas, GTK, AccountsService, GNOME desktop, and
-WirePlumber before Pronk and build the replacement Mutter and GNOME Control
-Center packages before updating a test machine. These packages target Fedora 44
+Build GNOME desktop schemas, GTK, AccountsService, its compatibility library,
+GNOME desktop, and WirePlumber before Pronk. Build the replacement Mutter and
+GNOME Control Center packages before updating a test machine. These packages target Fedora 44
 and replace core desktop components, so keep a working recovery path
 while testing. RPM Fusion Free is required for the H.264 encoder supplied by
 `gstreamer1-plugins-ugly`.
