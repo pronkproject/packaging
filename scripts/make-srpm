@@ -5,7 +5,7 @@ set -eu
 usage()
 {
   printf 'usage: %s PACKAGE [OUTPUT_DIRECTORY]\n' "$0" >&2
-  printf 'packages: pronk wireplumber mutter gnome-control-center\n' >&2
+  printf 'packages: pronk wireplumber gsettings-desktop-schemas gtk4 accountsservice gnome-desktop3 mutter gnome-control-center\n' >&2
   exit 2
 }
 
@@ -74,6 +74,38 @@ case $package in
 pronk)
   "$repository_root/scripts/make-pronk-sources" \
     "$repository_root/sources/pronk" "$spec" "$work_dir/SOURCES"
+  ;;
+gsettings-desktop-schemas)
+  base=$(spec_macro pronk_base)
+  test -n "$base"
+  assert_head "$repository_root/sources/gsettings-desktop-schemas" "$base"
+  archive_bzip2 "$repository_root/sources/gsettings-desktop-schemas" "$base" "gsettings-desktop-schemas-$base" \
+    "$work_dir/SOURCES/gsettings-desktop-schemas-$base.tar.bz2"
+  ;;
+gtk4)
+  base=$(spec_macro pronk_base)
+  test -n "$base"
+  assert_head "$repository_root/sources/gtk" "$base"
+  archive_bzip2 "$repository_root/sources/gtk" "$base" "gtk-$base" \
+    "$work_dir/SOURCES/gtk-$base.tar.bz2"
+  ;;
+accountsservice)
+  base=$(spec_macro pronk_base)
+  test -n "$base"
+  assert_head "$repository_root/sources/accountsservice" "$base"
+  archive_bzip2 "$repository_root/sources/accountsservice" "$base" "accountsservice-$base" \
+    "$work_dir/SOURCES/accountsservice-$base.tar.bz2"
+  ;;
+gnome-desktop3)
+  base=$(spec_macro pronk_base)
+  qrcodegen_base=$(spec_macro qrcodegen_base)
+  test -n "$base" && test -n "$qrcodegen_base"
+  assert_head "$repository_root/sources/gnome-desktop" "$base"
+  assert_head "$repository_root/sources/qrcodegen" "$qrcodegen_base"
+  archive_bzip2 "$repository_root/sources/gnome-desktop" "$base" "gnome-desktop-$base" \
+    "$work_dir/SOURCES/gnome-desktop-$base.tar.bz2"
+  archive_gzip "$repository_root/sources/qrcodegen" "$qrcodegen_base" "qrcodegen-$qrcodegen_base" \
+    "$work_dir/SOURCES/qrcodegen-$qrcodegen_base.tar.gz"
   ;;
 wireplumber)
   version=$(sed -n 's/^Version:[[:space:]]*//p' "$spec")

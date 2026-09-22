@@ -95,6 +95,11 @@ repositories = {
     "mutter_commit": root / "sources/mutter",
     "gnome_control_center_commit": root / "sources/gnome-control-center",
     "wireplumber_commit": root / "sources/wireplumber",
+    "gsettings_desktop_schemas_commit": root / "sources/gsettings-desktop-schemas",
+    "gtk4_commit": root / "sources/gtk",
+    "accountsservice_commit": root / "sources/accountsservice",
+    "gnome_desktop_commit": root / "sources/gnome-desktop",
+    "qrcodegen_commit": root / "sources/qrcodegen",
 }
 for key, repository in repositories.items():
     actual = git_head(repository)
@@ -104,6 +109,48 @@ for key, repository in repositories.items():
 
 for package in ("mutter", "gnome-control-center"):
     require_patch_base(package, root / "sources" / package)
+
+gsettings_spec = (root / "packages/gsettings-desktop-schemas/gsettings-desktop-schemas.spec").read_text()
+gsettings_base = re.search(
+    r"^%global pronk_base[ \t]+([0-9a-f]{40})$", gsettings_spec, re.MULTILINE
+)
+if gsettings_base is None:
+    fail("cannot find the GNOME desktop schemas source base")
+if gsettings_base.group(1) != components["gsettings_desktop_schemas_commit"]:
+    fail("GNOME desktop schemas RPM source base differs from the compatibility manifest")
+
+gtk_spec = (root / "packages/gtk4/gtk4.spec").read_text()
+gtk_base = re.search(r"^%global pronk_base[ \t]+([0-9a-f]{40})$", gtk_spec, re.MULTILINE)
+if gtk_base is None:
+    fail("cannot find the GTK source base")
+if gtk_base.group(1) != components["gtk4_commit"]:
+    fail("GTK RPM source base differs from the compatibility manifest")
+
+accountsservice_spec = (root / "packages/accountsservice/accountsservice.spec").read_text()
+accountsservice_base = re.search(
+    r"^%global pronk_base[ \t]+([0-9a-f]{40})$", accountsservice_spec, re.MULTILINE
+)
+if accountsservice_base is None:
+    fail("cannot find the AccountsService source base")
+if accountsservice_base.group(1) != components["accountsservice_commit"]:
+    fail("AccountsService RPM source base differs from the compatibility manifest")
+
+gnome_desktop_spec = (root / "packages/gnome-desktop3/gnome-desktop3.spec").read_text()
+gnome_desktop_base = re.search(
+    r"^%global pronk_base[ \t]+([0-9a-f]{40})$", gnome_desktop_spec, re.MULTILINE
+)
+if gnome_desktop_base is None:
+    fail("cannot find the GNOME desktop source base")
+if gnome_desktop_base.group(1) != components["gnome_desktop_commit"]:
+    fail("GNOME desktop RPM source base differs from the compatibility manifest")
+
+qrcodegen_base = re.search(
+    r"^%global qrcodegen_base[ \t]+([0-9a-f]{40})$", gnome_desktop_spec, re.MULTILINE
+)
+if qrcodegen_base is None:
+    fail("cannot find the QR-Code-generator source base")
+if qrcodegen_base.group(1) != components["qrcodegen_commit"]:
+    fail("QR-Code-generator source base differs from the compatibility manifest")
 
 pronk = root / "sources/pronk"
 cargo = tomllib.loads((pronk / "Cargo.toml").read_text())

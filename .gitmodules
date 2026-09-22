@@ -22,3 +22,22 @@
 [submodule "sources/libgxdp"]
 	path = sources/libgxdp
 	url = https://gitlab.gnome.org/GNOME/libgxdp.git
+[submodule "sources/gsettings-desktop-schemas"]
+	path = sources/gsettings-desktop-schemas
+	url = https://gitlab.gnome.org/GNOME/gsettings-desktop-schemas.git
+	branch = 51.0
+[submodule "sources/gtk"]
+	path = sources/gtk
+	url = https://gitlab.gnome.org/GNOME/gtk.git
+	branch = 4.23.0
+[submodule "sources/accountsservice"]
+	path = sources/accountsservice
+	url = https://gitlab.freedesktop.org/accountsservice/accountsservice.git
+	branch = 26.27.3
+[submodule "sources/gnome-desktop"]
+	path = sources/gnome-desktop
+	url = https://gitlab.gnome.org/GNOME/gnome-desktop.git
+	branch = 51.0
+[submodule "sources/qrcodegen"]
+	path = sources/qrcodegen
+	url = https://github.com/nayuki/QR-Code-generator.git
