@@ -19,6 +19,35 @@ def git_head(path: pathlib.Path) -> str:
     ).strip()
 
 
+def require_patch_base(package: str, repository: pathlib.Path) -> None:
+    spec = root / "packages" / package / f"{package}.spec"
+    match = re.search(
+        r"^%global pronk_base[ \t]+([0-9a-f]{40})$",
+        spec.read_text(),
+        re.MULTILINE,
+    )
+    if match is None:
+        fail(f"cannot find the patch base in {spec.relative_to(root)}")
+
+    base = match.group(1)
+    result = subprocess.run(
+        ["git", "-C", repository, "merge-base", "--is-ancestor", base, "HEAD"],
+        stdout=subprocess.DEVNULL,
+        stderr=subprocess.DEVNULL,
+        check=False,
+    )
+    if result.returncode == 1:
+        fail(
+            f"{repository.relative_to(root)} lacks patch base {base}; "
+            "fetch its history before generating the source RPM"
+        )
+    if result.returncode != 0:
+        fail(
+            f"cannot verify patch base {base} in "
+            f"{repository.relative_to(root)}"
+        )
+
+
 def rust_constant(path: pathlib.Path, name: str) -> int:
     pattern = re.compile(
         rf"^(?:pub\s+)?const {re.escape(name)}: [^=]+ = ([0-9_]+)(?: << ([0-9_]+))?;$",
