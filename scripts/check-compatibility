@@ -102,6 +102,9 @@ for key, repository in repositories.items():
     if actual != expected:
         fail(f"{repository.relative_to(root)} is at {actual}, expected {expected}")
 
+for package in ("mutter", "gnome-control-center"):
+    require_patch_base(package, root / "sources" / package)
+
 pronk = root / "sources/pronk"
 cargo = tomllib.loads((pronk / "Cargo.toml").read_text())
 chromiacast = cargo["workspace"]["dependencies"]["chromiacast"]
