@@ -11,8 +11,9 @@
 %global libadwaita_version 1.8~alpha
 %global nm_version 1.52.0
 
-# Disable parental control for RHEL builds
-%bcond malcontent %[!0%{?rhel}]
+# Fedora 44's malcontent was built against the pre-26 AccountsService ABI.
+# Keep the optional parental-controls panel disabled until its dependency chain is rebuilt.
+%bcond malcontent 0
 
 Name:           gnome-control-center
 Version:        51~beta
