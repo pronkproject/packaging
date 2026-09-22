@@ -431,16 +431,19 @@ meson_configure()
 	local build=$2
 	shift 2
 
-	reset_build_if_incompatible "$build" "meson:$source"
+	reset_build_if_incompatible "$build" "meson:$source:${PRONK_MESON_CONTEXT:-}"
 	# A failed Meson setup leaves meson-private behind but no usable Ninja
 	# graph. Start that managed build directory afresh on the next attempt.
 	if [[ ! -f $build/build.ninja && -d $build/meson-private ]]; then
 		log "Discarding an incomplete Meson setup: $build"
 		discard_managed_build "$build"
-		reset_build_if_incompatible "$build" "meson:$source"
+		reset_build_if_incompatible "$build" "meson:$source:${PRONK_MESON_CONTEXT:-}"
 	fi
 	if [[ -f $build/build.ninja ]]; then
-		meson setup --wrap-mode=nodownload --reconfigure "$build" "$source" "$@"
+		# A staged dependency has a different prefix for every temporary
+		# extension. Clear Meson's dependency cache before reconfiguring so a
+		# reused build directory does not retain the previous stage's headers.
+		meson setup --wrap-mode=nodownload --clearcache --reconfigure "$build" "$source" "$@"
 	else
 		meson setup --wrap-mode=nodownload "$build" "$source" "$@"
 	fi
@@ -587,6 +590,7 @@ build_gnome_desktop()
 		"$qrcodegen_build_source"/
 	ln -s "$qrcodegen_build_source" "$qrcodegen_link"
 	trap 'rm -f -- "$qrcodegen_link" "$wraplock"' EXIT
+	PRONK_MESON_CONTEXT="$stage" \
 	PKG_CONFIG_PATH="$stage/usr/lib64/pkgconfig:$stage/usr/share/pkgconfig${PKG_CONFIG_PATH:+:$PKG_CONFIG_PATH}" \
 		meson_configure "$gnome_desktop_source" "$build" \
 			--prefix=/usr \
@@ -604,10 +608,16 @@ build_gnome_desktop()
 )
 
 build_accountsservice()
-{
+(
 	local stage=$1
 	local build=$state_dir/builds/accountsservice
+	local wraplock=$accountsservice_source/subprojects/.wraplock
+	local mocklibc_source=$accountsservice_source/subprojects/mocklibc-1.0
+	local test_pycache=$accountsservice_source/tests/__pycache__
 
+	# Meson materializes the locally declared mocklibc subproject while it
+	# configures AccountsService. Keep the source checkout clean after a build.
+	trap 'rm -rf -- "$wraplock" "$mocklibc_source" "$test_pycache"' EXIT
 	log 'Building AccountsService 26.27.3'
 	meson_configure "$accountsservice_source" "$build" \
 		--prefix=/usr \
@@ -620,7 +630,7 @@ build_accountsservice()
 	DESTDIR="$stage" meson install -C "$build" --no-rebuild
 	sed -i "s|^prefix=/usr$|prefix=$stage/usr|" \
 		"$stage/usr/lib64/pkgconfig/accountsservice.pc"
-}
+)
 
 build_mutter()
 {
@@ -628,6 +638,7 @@ build_mutter()
 	local build=$state_dir/builds/mutter
 
 	log 'Building Mutter with the CastKMS grant broker'
+	PRONK_MESON_CONTEXT="$stage" \
 	PKG_CONFIG_PATH="$stage/usr/lib64/pkgconfig:$stage/usr/share/pkgconfig${PKG_CONFIG_PATH:+:$PKG_CONFIG_PATH}" \
 		meson_configure "$mutter_source" "$build" \
 		--prefix=/usr \
@@ -647,6 +658,7 @@ build_control_center()
 	local build=$state_dir/builds/gnome-control-center
 
 	log 'Building GNOME Settings with the Casting panel'
+	PRONK_MESON_CONTEXT="$stage" \
 	PKG_CONFIG_PATH="$stage/usr/lib64/pkgconfig:$stage/usr/share/pkgconfig${PKG_CONFIG_PATH:+:$PKG_CONFIG_PATH}" \
 	GI_TYPELIB_PATH="$stage/usr/lib64/girepository-1.0${GI_TYPELIB_PATH:+:$GI_TYPELIB_PATH}" \
 		meson_configure "$control_center_source" "$build" \
@@ -715,6 +727,7 @@ build_pronk()
 	local build=$state_dir/builds/pronk
 
 	log 'Building Pronk and its Chromiacast backend'
+	PRONK_MESON_CONTEXT="$stage" \
 	PATH="$stage/usr/bin:$PATH" \
 	LD_LIBRARY_PATH="$stage/usr/lib64${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}" \
 		meson_configure "$pronk_source" "$build" \
