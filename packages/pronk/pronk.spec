@@ -2,7 +2,7 @@
 
 Name:           pronk
 Version:        0.1.0
-Release:        8%{?dist}
+Release:        9%{?dist}
 Summary:        Use Google Cast devices as managed desktop displays
 
 License:        MIT
@@ -108,6 +108,9 @@ XDG_RUNTIME_DIR="$runtime_dir" CARGO_NET_OFFLINE=true dbus-run-session -- \
 
 
 %changelog
+* Tue Sep 22 2026 Ray Strode <rstrode@redhat.com> - 0.1.0-9
+- Use Mutter-issued CastKMS renderer sessions
+
 * Thu Sep 17 2026 Ray Strode <rstrode@redhat.com> - 0.1.0-8
 - Add delegated rendering and end-to-end receiver qualification
 
