@@ -298,6 +298,41 @@ if ET.canonicalize(dbus_xml, strip_text=True) != ET.canonicalize(
 ):
     fail("Pronk and GNOME Settings carry different D-Bus contracts")
 
+mutter_broker = ET.parse(
+    root / "sources/mutter/data/dbus-interfaces/org.gnome.Mutter.CastKms.xml"
+).getroot()
+mutter_interface = mutter_broker.find("interface[@name='org.gnome.Mutter.CastKms']")
+if mutter_interface is None:
+    fail("Mutter CastKms broker interface is absent")
+
+expected_broker_methods = {
+    "CreateDisplaySession": [
+        ("in", "u"), ("in", "u"), ("in", "u"), ("in", "u"),
+        ("out", "h"), ("out", "h"), ("out", "t"), ("out", "h"),
+        ("out", "s"), ("out", "t"),
+    ],
+    "AcquireRenderer": [("in", "t"), ("out", "h"), ("out", "t")],
+    "ReleaseRenderer": [("in", "t"), ("in", "t")],
+    "ReleaseDisplaySession": [("in", "t")],
+}
+for name, expected_arguments in expected_broker_methods.items():
+    method = mutter_interface.find(f"method[@name='{name}']")
+    if method is None:
+        fail(f"Mutter CastKms broker method {name} is absent")
+    actual_arguments = [
+        (argument.get("direction", "in"), argument.get("type"))
+        for argument in method.findall("arg")
+    ]
+    if actual_arguments != expected_arguments:
+        fail(
+            f"Mutter CastKms broker method {name} has {actual_arguments}, "
+            f"expected {expected_arguments}"
+        )
+    if any(argument_type == "h" for _, argument_type in expected_arguments):
+        annotation = method.find("annotation[@name='org.gtk.GDBus.C.UnixFD']")
+        if annotation is None or annotation.get("value") != "true":
+            fail(f"Mutter CastKms broker method {name} lacks Unix FD support")
+
 requirements = manifest["requirements"]
 pronk_rust = cargo["workspace"]["package"]["rust-version"]
 if pronk_rust != requirements["rust"]:
