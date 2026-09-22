@@ -632,6 +632,9 @@ build_accountsservice()
 		-Dadmin_group=wheel
 	meson compile -C "$build" -j "$(jobs)"
 	DESTDIR="$stage" meson install -C "$build" --no-rebuild
+	# AccountsService creates empty mutable runtime-state directories while
+	# installing. They belong to the host's /var and cannot be part of a sysext.
+	rm -rf --one-file-system -- "${stage:?}/var"
 	sed -i "s|^prefix=/usr$|prefix=$stage/usr|" \
 		"$stage/usr/lib64/pkgconfig/accountsservice.pc"
 )
