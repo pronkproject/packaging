@@ -2,7 +2,7 @@ ARG FEDORA_VERSION
 FROM registry.fedoraproject.org/fedora:${FEDORA_VERSION}
 
 RUN dnf -y install dnf5-plugins && \
-    dnf -y builddep mutter gnome-control-center wireplumber && \
+    dnf -y builddep accountsservice gnome-desktop3 gtk4 mutter gnome-control-center wireplumber && \
     dnf -y install \
         ShellCheck \
         cargo \
@@ -10,6 +10,7 @@ RUN dnf -y install dnf5-plugins && \
         gcc \
         gcc-c++ \
         git \
+        json-c-devel \
         gstreamer1-devel \
         gstreamer1-plugins-base-devel \
         libdrm-devel \
@@ -19,6 +20,7 @@ RUN dnf -y install dnf5-plugins && \
         pipewire-devel \
         pkgconf-pkg-config \
         rust \
+        sassc \
         systemd-devel && \
     dnf clean all
 

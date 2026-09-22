@@ -14,6 +14,11 @@ wireplumber_source=$packaging_root/sources/wireplumber
 gvc_source=$packaging_root/sources/libgnome-volume-control
 gvdb_source=$packaging_root/sources/gvdb
 libgxdp_source=$packaging_root/sources/libgxdp
+gsettings_source=$packaging_root/sources/gsettings-desktop-schemas
+gtk_source=$packaging_root/sources/gtk
+accountsservice_source=$packaging_root/sources/accountsservice
+gnome_desktop_source=$packaging_root/sources/gnome-desktop
+qrcodegen_source=$packaging_root/sources/qrcodegen
 
 state_base=${XDG_STATE_HOME:-$HOME/.local/state}
 data_base=${XDG_DATA_HOME:-$HOME/.local/share}
@@ -171,6 +176,11 @@ require_source_bundle()
 	require_git_source_tree libgnome-volume-control "$gvc_source"
 	require_git_source_tree GVDB "$gvdb_source"
 	require_git_source_tree libgxdp "$libgxdp_source"
+	require_git_source_tree gsettings-desktop-schemas "$gsettings_source"
+	require_git_source_tree GTK "$gtk_source"
+	require_git_source_tree AccountsService "$accountsservice_source"
+	require_git_source_tree GNOME-desktop "$gnome_desktop_source"
+	require_git_source_tree QR-Code-generator "$qrcodegen_source"
 }
 
 host_id()
@@ -515,13 +525,111 @@ stage_video_encoder_runtime()
 	rm -rf --one-file-system -- "${package_dir:?}"
 }
 
+build_gsettings_desktop_schemas()
+{
+	local stage=$1
+	local build=$state_dir/builds/gsettings-desktop-schemas
+
+	log 'Building GNOME desktop schemas'
+	meson_configure "$gsettings_source" "$build" \
+		--prefix=/usr \
+		--libdir=lib64 \
+		--buildtype=debugoptimized
+	meson compile -C "$build" -j "$(jobs)"
+	DESTDIR="$stage" meson install -C "$build" --no-rebuild
+	glib-compile-schemas --strict "$stage/usr/share/glib-2.0/schemas"
+}
+
+build_gtk4()
+{
+	local stage=$1
+	local build=$state_dir/builds/gtk4
+	local pc
+
+	log 'Building GTK 4.23'
+	meson_configure "$gtk_source" "$build" \
+		--prefix=/usr \
+		--libdir=lib64 \
+		--buildtype=debugoptimized \
+		-Ddocumentation=false \
+		-Dintrospection=enabled \
+		-Dman-pages=false \
+		-Dbuild-tests=false \
+		-Dbuild-testsuite=false \
+		-Dbuild-demos=false \
+		-Dbuild-examples=false
+	meson compile -C "$build" -j "$(jobs)"
+	DESTDIR="$stage" meson install -C "$build" --no-rebuild
+
+	# Consumers configure against this staged GTK rather than Fedora 44's
+	# older system copy. The development metadata is removed after those builds.
+	for pc in "$stage"/usr/lib64/pkgconfig/gtk4*.pc \
+		"$stage"/usr/lib64/pkgconfig/gdk-*.pc; do
+		[[ -f $pc ]] || continue
+		sed -i "s|^prefix=/usr$|prefix=$stage/usr|" "$pc"
+	done
+}
+
+build_gnome_desktop()
+(
+	local stage=$1
+	local build=$state_dir/builds/gnome-desktop
+
+	log 'Building GNOME desktop 51'
+	local qrcodegen_link=$gnome_desktop_source/subprojects/qrcodegen
+	local qrcodegen_build_source=$state_dir/builds/gnome-desktop-qrcodegen
+	local wraplock=$gnome_desktop_source/subprojects/.wraplock
+	[[ ! -e $qrcodegen_link ]] || die "unexpected GNOME desktop qrcodegen path: $qrcodegen_link"
+	rm -rf --one-file-system -- "$qrcodegen_build_source"
+	mkdir -p "$qrcodegen_build_source"
+	cp -a "$qrcodegen_source"/. "$qrcodegen_build_source"/
+	cp -a "$gnome_desktop_source/subprojects/packagefiles/qrcodegen"/. \
+		"$qrcodegen_build_source"/
+	ln -s "$qrcodegen_build_source" "$qrcodegen_link"
+	trap 'rm -f -- "$qrcodegen_link" "$wraplock"' EXIT
+	PKG_CONFIG_PATH="$stage/usr/lib64/pkgconfig:$stage/usr/share/pkgconfig${PKG_CONFIG_PATH:+:$PKG_CONFIG_PATH}" \
+		meson_configure "$gnome_desktop_source" "$build" \
+			--prefix=/usr \
+			--libdir=lib64 \
+			--libexecdir=libexec \
+			--buildtype=debugoptimized \
+			-Dgtk_doc=false \
+			-Dinstalled_tests=false
+	meson compile -C "$build" -j "$(jobs)"
+	DESTDIR="$stage" meson install -C "$build" --no-rebuild
+	for pc in "$stage"/usr/lib64/pkgconfig/gnome-*-4.pc; do
+		[[ -f $pc ]] || continue
+		sed -i "s|^prefix=/usr$|prefix=$stage/usr|" "$pc"
+	done
+)
+
+build_accountsservice()
+{
+	local stage=$1
+	local build=$state_dir/builds/accountsservice
+
+	log 'Building AccountsService 26.27.3'
+	meson_configure "$accountsservice_source" "$build" \
+		--prefix=/usr \
+		--libdir=lib64 \
+		--libexecdir=libexec \
+		--buildtype=debugoptimized \
+		-Dgtk_doc=false \
+		-Dadmin_group=wheel
+	meson compile -C "$build" -j "$(jobs)"
+	DESTDIR="$stage" meson install -C "$build" --no-rebuild
+	sed -i "s|^prefix=/usr$|prefix=$stage/usr|" \
+		"$stage/usr/lib64/pkgconfig/accountsservice.pc"
+}
+
 build_mutter()
 {
 	local stage=$1
 	local build=$state_dir/builds/mutter
 
 	log 'Building Mutter with the CastKMS grant broker'
-	meson_configure "$mutter_source" "$build" \
+	PKG_CONFIG_PATH="$stage/usr/lib64/pkgconfig:$stage/usr/share/pkgconfig${PKG_CONFIG_PATH:+:$PKG_CONFIG_PATH}" \
+		meson_configure "$mutter_source" "$build" \
 		--prefix=/usr \
 		--libdir=lib64 \
 		--libexecdir=libexec \
@@ -539,15 +647,66 @@ build_control_center()
 	local build=$state_dir/builds/gnome-control-center
 
 	log 'Building GNOME Settings with the Casting panel'
-	meson_configure "$control_center_source" "$build" \
+	PKG_CONFIG_PATH="$stage/usr/lib64/pkgconfig:$stage/usr/share/pkgconfig${PKG_CONFIG_PATH:+:$PKG_CONFIG_PATH}" \
+	GI_TYPELIB_PATH="$stage/usr/lib64/girepository-1.0${GI_TYPELIB_PATH:+:$GI_TYPELIB_PATH}" \
+		meson_configure "$control_center_source" "$build" \
 		--prefix=/usr \
 		--libdir=lib64 \
 		--libexecdir=libexec \
 		--buildtype=debugoptimized \
 		-Dtests=false \
 		-Ddocumentation=false
-	meson compile -C "$build" -j "$(jobs)"
+	GI_TYPELIB_PATH="$stage/usr/lib64/girepository-1.0${GI_TYPELIB_PATH:+:$GI_TYPELIB_PATH}" \
+		meson compile -C "$build" -j "$(jobs)"
 	DESTDIR="$stage" meson install -C "$build" --no-rebuild
+}
+
+trim_gnome_desktop_devel()
+{
+	local stage=$1
+
+	rm -rf -- "$stage/usr/include/gnome-desktop-4.0"
+	rm -f -- "$stage"/usr/lib64/libgnome-*-4.so \
+		"$stage"/usr/lib64/pkgconfig/gnome-*-4.pc \
+		"$stage"/usr/lib64/girepository-1.0/Gnome*-4.0.typelib \
+		"$stage"/usr/share/gir-1.0/Gnome*-4.0.gir
+}
+
+trim_accountsservice_devel()
+{
+	local stage=$1
+
+	rm -rf -- "$stage/usr/include/accountsservice-1.0" \
+		"$stage/usr/share/gtk-doc/html/libaccountsservice" \
+		"$stage/usr/share/vala/vapi"
+	rm -f -- "$stage/usr/lib64/libaccountsservice.so" \
+		"$stage/usr/lib64/pkgconfig/accountsservice.pc" \
+		"$stage/usr/lib64/girepository-1.0/AccountsService-1.0.typelib" \
+		"$stage/usr/share/gir-1.0/AccountsService-1.0.gir"
+}
+
+trim_gtk4_devel()
+{
+	local stage=$1
+
+	rm -rf -- "$stage/usr/include/gtk-4.0"
+	rm -f -- "$stage"/usr/lib64/pkgconfig/gtk4*.pc \
+		"$stage"/usr/lib64/pkgconfig/gdk-*.pc \
+		"$stage"/usr/lib64/girepository-1.0/Gtk-4.0.typelib \
+		"$stage"/usr/share/gir-1.0/Gtk-4.0.gir
+}
+
+trim_gsettings_desktop_schemas_devel()
+{
+	local stage=$1
+
+	# The schemas are needed at runtime, while their headers and introspection
+	# metadata only serve the Mutter build in this container.
+	rm -rf -- "$stage/usr/include/gsettings-desktop-schemas"
+	rm -f -- \
+		"$stage/usr/lib64/girepository-1.0/GDesktopEnums-3.0.typelib" \
+		"$stage/usr/share/gir-1.0/GDesktopEnums-3.0.gir" \
+		"$stage/usr/share/pkgconfig/gsettings-desktop-schemas.pc"
 }
 
 build_pronk()
@@ -602,6 +761,10 @@ write_extension_metadata()
 	local gvc_revision=$9
 	local gvdb_revision=${10}
 	local libgxdp_revision=${11}
+	local gsettings_revision=${12}
+	local gtk_revision=${13}
+	local accountsservice_revision=${14}
+	local gnome_desktop_revision=${15}
 
 	install -d "$release_dir" "$metadata_dir"
 	printf 'ID=%s\nVERSION_ID=%s\nSYSEXT_ID=pronk\nEXTENSION_RELOAD_MANAGER=1\n' \
@@ -624,6 +787,10 @@ write_extension_metadata()
 		"GVC_REVISION=$gvc_revision" \
 		"GVDB_REVISION=$gvdb_revision" \
 		"LIBGXDP_REVISION=$libgxdp_revision" \
+		"GSETTINGS_DESKTOP_SCHEMAS_REVISION=$gsettings_revision" \
+		"GTK4_REVISION=$gtk_revision" \
+		"ACCOUNTS_SERVICE_REVISION=$accountsservice_revision" \
+		"GNOME_DESKTOP_REVISION=$gnome_desktop_revision" \
 		> "$metadata_dir/manifest"
 
 }
@@ -641,7 +808,9 @@ validate_stage()
 		usr/bin/pronkctl \
 		usr/bin/gnome-control-center \
 		usr/bin/wireplumber \
+		usr/libexec/accounts-daemon \
 		usr/libexec/pronk/pronk-chromiacast \
+		usr/share/glib-2.0/schemas/gschemas.compiled \
 		usr/lib64/gstreamer-1.0/libgstx264.so \
 		usr/lib/systemd/user/pronk-chromiacast.socket \
 		usr/lib/extension-release.d/extension-release.pronk \
@@ -651,6 +820,10 @@ validate_stage()
 
 	find "$stage/usr/lib64" -name 'libmutter-*.so.*' -print -quit | grep -q . || \
 		die 'staged extension is missing the Mutter shared library'
+	find "$stage/usr/lib64" -name 'libaccountsservice.so.1*' -type f -print -quit | grep -q . || \
+		die 'staged extension is missing the AccountsService shared library'
+	find "$stage/usr/lib64" -name 'libgnome-desktop-4.so.2*' -type f -print -quit | grep -q . || \
+		die 'staged extension is missing the GNOME desktop shared library'
 	find "$stage/usr/lib64" -name 'libx264.so.*' -type f -print -quit | grep -q . || \
 		die 'staged extension is missing the x264 shared library'
 	for manifest_key in \
@@ -669,7 +842,11 @@ validate_stage()
 		WIREPLUMBER_REVISION \
 		GVC_REVISION \
 		GVDB_REVISION \
-		LIBGXDP_REVISION; do
+		LIBGXDP_REVISION \
+		GSETTINGS_DESKTOP_SCHEMAS_REVISION \
+		GTK4_REVISION \
+		ACCOUNTS_SERVICE_REVISION \
+		GNOME_DESKTOP_REVISION; do
 		[[ -n $(read_value "$manifest" "$manifest_key") ]] || \
 			die "the staged manifest has no $manifest_key"
 	done
@@ -703,6 +880,7 @@ validate_host_abi()
 		"$x264_plugin" \
 		"$stage/usr/bin/gnome-control-center" \
 		"$stage/usr/bin/wireplumber" \
+		"$stage/usr/libexec/accounts-daemon" \
 		"$stage/usr/bin/pronkd" \
 		/usr/bin/gnome-shell; do
 		output=$(LD_LIBRARY_PATH="$library_path" ldd -r "$target" 2>&1) || {
@@ -765,8 +943,16 @@ build_in_container()
 	require_source_bundle
 
 	build_wireplumber "$stage"
+	build_gsettings_desktop_schemas "$stage"
+	build_gtk4 "$stage"
+	build_gnome_desktop "$stage"
+	build_accountsservice "$stage"
 	build_mutter "$stage"
 	build_control_center "$stage"
+	trim_gsettings_desktop_schemas_devel "$stage"
+	trim_gtk4_devel "$stage"
+	trim_gnome_desktop_devel "$stage"
+	trim_accountsservice_devel "$stage"
 	build_pronk "$stage"
 	write_extension_metadata "$stage" "$identifier" "$@"
 }
@@ -783,6 +969,10 @@ build_extension()
 	local gvc_revision
 	local gvdb_revision
 	local libgxdp_revision
+	local gsettings_revision
+	local gtk_revision
+	local accountsservice_revision
+	local gnome_desktop_revision
 
 	ensure_state_directories
 	require_source_bundle
@@ -799,6 +989,10 @@ build_extension()
 	gvc_revision=$(git_revision "$gvc_source")
 	gvdb_revision=$(git_revision "$gvdb_source")
 	libgxdp_revision=$(git_revision "$libgxdp_source")
+	gsettings_revision=$(git_revision "$gsettings_source")
+	gtk_revision=$(git_revision "$gtk_source")
+	accountsservice_revision=$(git_revision "$accountsservice_source")
+	gnome_desktop_revision=$(git_revision "$gnome_desktop_source")
 	identifier=$(build_id "$pronk_revision")
 	safe_component "$identifier"
 	temporary_stage=$(mktemp -d "$state_dir/.stage.XXXXXX")
@@ -810,7 +1004,7 @@ build_extension()
 		"$packaging_revision" "$pronk_revision" "$castkms_revision" \
 		"$mutter_revision" "$control_center_revision" \
 		"$wireplumber_revision" "$gvc_revision" "$gvdb_revision" \
-		"$libgxdp_revision"
+		"$libgxdp_revision" "$gsettings_revision" "$gtk_revision" "$accountsservice_revision" "$gnome_desktop_revision"
 	validate_stage "$temporary_stage"
 	validate_host_abi "$temporary_stage"
 	replace_staged_extension "$temporary_stage"
@@ -1067,7 +1261,7 @@ check)
 	check_scripts
 	;;
 __build-in-container)
-	(($# == 12)) || die 'invalid internal build invocation'
+	(($# == 16)) || die 'invalid internal build invocation'
 	case $3 in
 	true|false) run_tests=$3 ;;
 	*) die 'invalid internal test setting' ;;
