@@ -38,6 +38,21 @@ test "$(readlink "$runtime/pronk")" = "$image"
 run_generator 7.2.0-62.fc45.x86_64
 test ! -e "$runtime/pronk"
 
+printf "ID=fedora\nVERSION_ID=44\n" > "$os_release"
+printf '%s\n' \
+	'HOST_OSTREE_VERSION=non-ostree:fedora-44' \
+	'HOST_KERNEL_RELEASE=7.2.0-61.fc45.x86_64' \
+	> "$manifest"
+run_generator
+test -L "$runtime/pronk"
+test "$(readlink "$runtime/pronk")" = "$image"
+rm "$runtime/pronk"
+printf "OSTREE_VERSION='45.20260828.n.0'\n" > "$os_release"
+printf '%s\n' \
+	'HOST_OSTREE_VERSION=45.20260828.n.0' \
+	'HOST_KERNEL_RELEASE=7.2.0-61.fc45.x86_64' \
+	> "$manifest"
+
 run_generator
 touch "$disabled"
 run_generator

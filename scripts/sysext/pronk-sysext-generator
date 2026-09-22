@@ -55,7 +55,13 @@ test -r "$os_release" || exit 0
 
 expected_ostree=$(read_value "$manifest" HOST_OSTREE_VERSION) || exit 0
 expected_kernel=$(read_value "$manifest" HOST_KERNEL_RELEASE) || exit 0
-host_ostree=$(read_value "$os_release" OSTREE_VERSION) || exit 0
+if host_ostree=$(read_value "$os_release" OSTREE_VERSION); then
+	:
+else
+	host_id=$(read_value "$os_release" ID) || exit 0
+	host_version_id=$(read_value "$os_release" VERSION_ID) || exit 0
+	host_ostree="non-ostree:$host_id-$host_version_id"
+fi
 host_kernel=${PRONK_SYSEXT_KERNEL_RELEASE:-$(uname -r)}
 
 test -n "$expected_ostree" || exit 0

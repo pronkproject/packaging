@@ -203,10 +203,14 @@ host_version_id()
 
 host_ostree_version()
 {
+	local ostree_version
+
 	if [[ -n ${PRONK_HOST_OSTREE_VERSION:-} ]]; then
 		printf '%s\n' "$PRONK_HOST_OSTREE_VERSION"
+	elif ostree_version=$(read_value /usr/lib/os-release OSTREE_VERSION); then
+		printf '%s\n' "$ostree_version"
 	else
-		read_value /usr/lib/os-release OSTREE_VERSION
+		printf 'non-ostree:%s-%s\n' "$(host_id)" "$(host_version_id)"
 	fi
 }
 
