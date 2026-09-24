@@ -858,10 +858,15 @@ write_extension_metadata()
 validate_stage()
 {
 	local stage=$1
+	local stage_mode
 	local manifest=$stage/usr/lib/pronk-sysext/manifest
 	local manifest_key
 	local required
 	local unexpected
+
+	stage_mode=$(stat -c '%a' "$stage")
+	[[ $stage_mode == 755 ]] ||
+		die "staged extension root must be mode 0755, found $stage_mode"
 
 	for required in \
 		usr/bin/pronkd \
@@ -1075,6 +1080,10 @@ build_extension()
 	identifier=$(build_id "$pronk_revision")
 	safe_component "$identifier"
 	temporary_stage=$(mktemp -d "$state_dir/.stage.XXXXXX")
+	# The stage may be exported as a portable extension image.  mktemp creates
+	# it as 0700, which would make a faithfully unpacked image inaccessible to
+	# desktop user services even though all staged runtime files are readable.
+	chmod 0755 "$temporary_stage"
 
 	log "Building extension $identifier with $(jobs) parallel jobs"
 	stage_video_encoder_runtime "$temporary_stage"
