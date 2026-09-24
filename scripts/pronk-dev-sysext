@@ -524,6 +524,7 @@ stage_video_encoder_runtime()
 	local candidate
 	local -a candidates
 	local -a package_names=(
+		gstreamer1-plugins-bad-free
 		gstreamer1-plugins-ugly
 		x264-libs
 	)
@@ -915,6 +916,7 @@ validate_stage()
 		usr/libexec/pronk/pronk-chromiacast \
 		usr/share/glib-2.0/schemas/gschemas.compiled \
 		usr/lib64/gstreamer-1.0/libgstx264.so \
+		usr/lib64/gstreamer-1.0/libgstvideoparsersbad.so \
 		usr/lib/systemd/user/pronk-chromiacast.socket \
 		usr/lib/udev/rules.d/72-pronk-dma-heap.rules \
 		usr/lib/extension-release.d/extension-release.pronk \
@@ -977,6 +979,7 @@ validate_host_abi()
 	local library_path
 	local mutter_library
 	local x264_plugin
+	local h264_parser_plugin
 	local target
 	local output
 
@@ -985,6 +988,8 @@ validate_host_abi()
 	[[ -n $mutter_library ]] || die 'cannot locate the staged Mutter library for ABI validation'
 	x264_plugin=$stage/usr/lib64/gstreamer-1.0/libgstx264.so
 	[[ -f $x264_plugin ]] || die 'cannot locate the staged GStreamer x264 plugin'
+	h264_parser_plugin=$stage/usr/lib64/gstreamer-1.0/libgstvideoparsersbad.so
+	[[ -f $h264_parser_plugin ]] || die 'cannot locate the staged GStreamer H.264 parser plugin'
 
 	# Resolve relocations with the running deployment's loader and dependency
 	# set. This catches a builder repository that has moved ahead of the exact
@@ -992,6 +997,7 @@ validate_host_abi()
 	for target in \
 		"$mutter_library" \
 		"$x264_plugin" \
+		"$h264_parser_plugin" \
 		"$stage/usr/bin/gnome-control-center" \
 		"$stage/usr/bin/wireplumber" \
 		"$stage/usr/bin/pronkd" \
