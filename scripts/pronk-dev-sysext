@@ -1362,9 +1362,13 @@ check)
 	;;
 __build-in-container)
 	(($# == 16)) || die 'invalid internal build invocation'
-	case $3 in
-	true|false) run_tests=$3 ;;
-	*) die 'invalid internal test setting' ;;
+	case "$3" in
+	true|false)
+		run_tests=$3
+		;;
+	*)
+		die 'invalid internal test setting'
+		;;
 	esac
 	build_in_container "$1" "$2" "${@:4}"
 	;;
