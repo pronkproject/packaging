@@ -1,0 +1,12 @@
+[Unit]
+Description=Compile merged GSettings schemas for the Pronk system extension
+After=systemd-sysext.service
+Before=display-manager.service graphical.target
+ConditionPathExists=/run/extensions/pronk
+
+[Service]
+Type=oneshot
+ExecStart=/usr/bin/glib-compile-schemas --strict /usr/share/glib-2.0/schemas
+
+[Install]
+WantedBy=graphical.target

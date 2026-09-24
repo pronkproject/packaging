@@ -1172,6 +1172,10 @@ install_extension()
 	sudo install -m 0644 -o root -g root \
 		"$script_dir/sysext/80-pronk-dev.conf" \
 		/etc/systemd/sysext.conf.d/80-pronk-dev.conf
+	sudo install -m 0644 -o root -g root \
+		"$script_dir/sysext/pronk-sysext-compile-schemas.service" \
+		/etc/systemd/system/pronk-sysext-compile-schemas.service
+	sudo systemctl enable pronk-sysext-compile-schemas.service
 	sudo env PRONK_SYSEXT_DISABLED=/dev/null \
 		/etc/systemd/system-generators/pronk-sysext-generator
 
