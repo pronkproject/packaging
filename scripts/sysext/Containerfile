@@ -13,6 +13,7 @@ RUN dnf -y install dnf5-plugins && \
         json-c-devel \
         gstreamer1-devel \
         gstreamer1-plugins-base-devel \
+        gnome-shell \
         libdrm-devel \
         make \
         meson \

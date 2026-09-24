@@ -201,6 +201,16 @@ host_version_id()
 	fi
 }
 
+running_host_matches_target()
+{
+	local running_id
+	local running_version
+
+	running_id=$(read_value /usr/lib/os-release ID)
+	running_version=$(read_value /usr/lib/os-release VERSION_ID)
+	[[ $(host_id) == "$running_id" && $(host_version_id) == "$running_version" ]]
+}
+
 host_ostree_version()
 {
 	local ostree_version
@@ -511,6 +521,8 @@ stage_video_encoder_runtime()
 	mkdir -p -- "$package_dir"
 	log 'Downloading the GStreamer H.264 encoder runtime'
 	dnf -q download \
+		--refresh \
+		--releasever="$(host_version_id)" \
 		--arch="$(uname -m)" \
 		--destdir="$package_dir" \
 		"${package_names[@]}"
@@ -914,6 +926,15 @@ validate_host_abi()
 	done
 }
 
+validate_target_abi()
+{
+	# This runs in the Fedora image selected by host_version_id().  In
+	# particular, a developer can build an extension for a newer guest without
+	# accidentally resolving its dependencies against the build machine's
+	# older userspace.
+	validate_host_abi "$@"
+}
+
 label_extension_for_target()
 {
 	local image=$1
@@ -975,6 +996,7 @@ build_in_container()
 	trim_accountsservice_devel "$stage"
 	build_pronk "$stage"
 	write_extension_metadata "$stage" "$identifier" "$@"
+	validate_target_abi "$stage"
 }
 
 build_extension()
@@ -1026,7 +1048,11 @@ build_extension()
 		"$wireplumber_revision" "$gvc_revision" "$gvdb_revision" \
 		"$libgxdp_revision" "$gsettings_revision" "$gtk_revision" "$accountsservice_revision" "$gnome_desktop_revision"
 	validate_stage "$temporary_stage"
-	validate_host_abi "$temporary_stage"
+	if running_host_matches_target; then
+		validate_host_abi "$temporary_stage"
+	else
+		log "Target Fedora $(host_version_id) ABI was validated in its builder; skipping the Fedora $(read_value /usr/lib/os-release VERSION_ID) host check"
+	fi
 	replace_staged_extension "$temporary_stage"
 	temporary_stage=
 	log "Staged extension is ready in $state_dir/staged"
