@@ -64,15 +64,29 @@ its ordering would hide the earlier merge. Building and publishing from an
 already unlocked boot is safe because `deploy` does not alter the running
 desktop.
 
-The extension must be built while running a kernel made from the pinned
-CastKMS source. CastKMS depends on DRM-core interfaces from that tree and
-cannot be supplied as an akmod for a stock Fedora kernel. The kernel build and
-installation remain a separate, explicitly bootable artifact. Build the
+For a host deployment, build the extension while running a kernel made from
+the pinned CastKMS source. CastKMS depends on DRM-core interfaces from that
+tree and cannot be supplied as an akmod for a stock Fedora kernel. The kernel
+build and installation remain a separate, explicitly bootable artifact. Build the
 binary RPMs with:
 
 ```sh
 scripts/build-castkms-kernel ./rpms
 ```
+
+For a guest with a separately built kernel, `prepare` and `build` can stage
+the userspace extension on a Fedora host without changing that host's kernel:
+
+```sh
+scripts/pronk-dev-sysext --target-kernel-release RELEASE prepare
+scripts/pronk-dev-sysext --target-kernel-release RELEASE build
+```
+
+`RELEASE` must end in the pinned CastKMS revision, and the resulting staged
+extension records that exact release. Install and activate the stage in the
+guest only after booting the corresponding kernel; `install` and `deploy`
+reject the target-kernel option so they cannot publish a guest extension on
+the build host.
 
 The builder starts with the running kernel's configuration, enables built-in
 CastKMS, strips module debug information before signing, and gives the result
@@ -86,10 +100,10 @@ files with its persistent products and rejects concurrent use of the same build
 directory. It archives a committed CastKMS tree and rejects tracked changes;
 commit kernel work before producing a bootable package. The compatibility
 manifest records the kernel tree's distinct Rust
-compiler floor. Install and boot that kernel before building the extension; do
-not use an extension built for another kernel release. The extension builder
-checks both the revision embedded in the running kernel's release and the
-presence of built-in CastKMS before it starts a userspace build.
+compiler floor. For a host deployment, install and boot that kernel before
+building the extension; do not use an extension built for another kernel
+release. The host build checks both the revision embedded in the running
+kernel's release and the presence of built-in CastKMS before it starts.
 
 On a Secure Boot system, provide a private key and its enrolled certificate:
 

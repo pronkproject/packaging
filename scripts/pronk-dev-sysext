@@ -30,6 +30,7 @@ extension_store=${PRONK_SYSEXT_STORE:-/var/lib/pronk-sysext}
 
 run_tests=false
 rebuild_builder=false
+target_kernel_release=${PRONK_TARGET_KERNEL_RELEASE:-}
 temporary_stage=
 pending_installed_image=
 
@@ -106,6 +107,9 @@ Commands:
 Options:
   --run-tests        Run source-tree test gates while building
   --rebuild-builder  Rebuild the Podman image even if it already exists
+  --target-kernel-release RELEASE
+                     Build a staged extension for a guest running RELEASE;
+                     install and deploy remain host-only
   -h, --help         Show this help
 
 Sources are always read from this packaging checkout's sources/* submodules.
@@ -228,7 +232,11 @@ host_ostree_version()
 
 kernel_release()
 {
-	uname -r
+	if [[ -n $target_kernel_release ]]; then
+		printf '%s\n' "$target_kernel_release"
+	else
+		uname -r
+	fi
 }
 
 require_pinned_castkms_kernel()
@@ -240,7 +248,9 @@ require_pinned_castkms_kernel()
 	release=$(kernel_release)
 	[[ $release == *"-pronk-g$revision" ]] ||
 		die "the running kernel does not match CastKMS revision $revision: $release"
-	castkms_is_available || die 'the running kernel does not provide CastKMS'
+	if [[ -z $target_kernel_release ]]; then
+		castkms_is_available || die 'the running kernel does not provide CastKMS'
+	fi
 }
 
 safe_component()
@@ -361,6 +371,7 @@ run_in_builder()
 		--env "PRONK_HOST_ID=$(host_id)" \
 		--env "PRONK_HOST_VERSION_ID=$(host_version_id)" \
 		--env "PRONK_HOST_OSTREE_VERSION=$(host_ostree_version)" \
+		--env "PRONK_TARGET_KERNEL_RELEASE=$target_kernel_release" \
 		--env "PRONK_BUILDER_IDENTITY=$image_identity" \
 		"$(builder_image)" \
 		"$@"
@@ -1348,6 +1359,13 @@ while (($# > 0)); do
 		rebuild_builder=true
 		shift
 		;;
+	--target-kernel-release)
+		(($# >= 2)) || die '--target-kernel-release needs a value'
+		target_kernel_release=$2
+		[[ $target_kernel_release =~ ^[A-Za-z0-9._+-]+$ ]] ||
+			die 'invalid target kernel release'
+		shift 2
+		;;
 	-h|--help)
 		usage
 		exit 0
@@ -1376,16 +1394,19 @@ build)
 	;;
 install)
 	(($# == 0)) || die "unexpected argument: $1"
+	[[ -z $target_kernel_release ]] || die 'cannot install a guest extension on the host'
 	install_extension
 	;;
 deploy)
 	(($# == 0)) || die "unexpected argument: $1"
+	[[ -z $target_kernel_release ]] || die 'cannot deploy a guest extension on the host'
 	prepare_builder
 	build_extension
 	install_extension
 	;;
 activate)
 	(($# == 0)) || die "unexpected argument: $1"
+	[[ -z $target_kernel_release ]] || die 'cannot activate a guest extension on the host'
 	activate_extension
 	;;
 status)
