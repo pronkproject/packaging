@@ -26,7 +26,7 @@
 %endif
 
 Name:           gtk4
-Version:        4.23.0
+Version:        4.23.4
 Release:        0.1.pronk%{?dist}
 Summary:        GTK graphical user interface library
 
@@ -71,7 +71,7 @@ Summary:        GTK graphical user interface library
 # The license was last checked for GTK 4.19.3.
 License:        LGPL-2.0-or-later AND LGPL-2.1-or-later AND Apache-2.0 AND CC0-1.0 AND MIT AND MIT-open-group AND HPND-sell-variant AND GPL-2.0-or-later AND GPL-3.0-or-later AND OFL-1.1
 URL:            https://www.gtk.org
-%global pronk_base eb6f391c6e382beb4974da4796b91afa7e08f088
+%global pronk_base 42ae2c0598bd9fdd83ecdbfa67b715729d52995b
 Source0:        https://gitlab.gnome.org/GNOME/gtk/-/archive/%{pronk_base}/gtk-%{pronk_base}.tar.bz2
 
 BuildRequires:  cups-devel
