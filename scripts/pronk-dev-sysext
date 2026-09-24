@@ -9,6 +9,7 @@ packaging_root=$(CDPATH='' cd -- "$script_dir/.." && pwd -P)
 pronk_source=$packaging_root/sources/pronk
 castkms_source=$packaging_root/sources/castkms
 renderer_source=$packaging_root/sources/castkms-renderer
+libdrm_source=$packaging_root/sources/libdrm
 mutter_source=$packaging_root/sources/mutter
 control_center_source=$packaging_root/sources/gnome-control-center
 wireplumber_source=$packaging_root/sources/wireplumber
@@ -176,6 +177,7 @@ require_source_bundle()
 	require_git_source_tree Pronk "$pronk_source"
 	require_git_source_tree CastKMS "$castkms_source"
 	require_git_source_tree 'CastKMS renderer' "$renderer_source"
+	require_git_source_tree libdrm "$libdrm_source"
 	require_git_source_tree Mutter "$mutter_source"
 	require_git_source_tree 'GNOME Settings' "$control_center_source"
 	require_git_source_tree WirePlumber "$wireplumber_source"
@@ -665,6 +667,40 @@ build_accountsservice()
 		"$stage/usr/lib64/pkgconfig/accountsservice.pc"
 )
 
+build_libdrm()
+{
+	local stage=$1
+	local build=$state_dir/builds/libdrm
+
+	log 'Building libdrm with constraints-list event support'
+	PRONK_MESON_CONTEXT="$stage" \
+		meson_configure "$libdrm_source" "$build" \
+			--prefix=/usr \
+			--libdir=lib64 \
+			--buildtype=debugoptimized \
+			-Dtests="$run_tests" \
+			-Dintel=disabled \
+			-Dradeon=disabled \
+			-Damdgpu=disabled \
+			-Dnouveau=disabled \
+			-Dvmwgfx=disabled \
+			-Domap=disabled \
+			-Dexynos=disabled \
+			-Dtegra=disabled \
+			-Dvc4=disabled \
+			-Detnaviv=disabled \
+			-Dcairo-tests=disabled \
+			-Dvalgrind=disabled \
+			-Dman-pages=disabled
+	meson compile -C "$build" -j "$(jobs)"
+	if $run_tests; then
+		meson test -C "$build" drmevent --print-errorlogs
+	fi
+	DESTDIR="$stage" meson install -C "$build" --no-rebuild
+	sed -i "s|^prefix=/usr$|prefix=$stage/usr|" \
+		"$stage/usr/lib64/pkgconfig/libdrm.pc"
+}
+
 build_mutter()
 {
 	local stage=$1
@@ -673,6 +709,7 @@ build_mutter()
 	log 'Building Mutter with the CastKMS grant broker'
 	PRONK_MESON_CONTEXT="$stage" \
 	PKG_CONFIG_PATH="$stage/usr/lib64/pkgconfig:$stage/usr/share/pkgconfig${PKG_CONFIG_PATH:+:$PKG_CONFIG_PATH}" \
+	LD_LIBRARY_PATH="$stage/usr/lib64${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}" \
 		meson_configure "$mutter_source" "$build" \
 		--prefix=/usr \
 		--libdir=lib64 \
@@ -681,8 +718,10 @@ build_mutter()
 		-Dtests=disabled \
 		-Dinstalled_tests=false \
 		-Ddocs=false
-	meson compile -C "$build" -j "$(jobs)"
-	DESTDIR="$stage" meson install -C "$build" --no-rebuild
+	LD_LIBRARY_PATH="$stage/usr/lib64${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}" \
+		meson compile -C "$build" -j "$(jobs)"
+	LD_LIBRARY_PATH="$stage/usr/lib64${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}" \
+		DESTDIR="$stage" meson install -C "$build" --no-rebuild
 }
 
 build_control_center()
@@ -742,6 +781,18 @@ trim_accountsservice_devel()
 		"$stage/usr/lib64/pkgconfig/accountsservice.pc" \
 		"$stage/usr/lib64/girepository-1.0/AccountsService-1.0.typelib" \
 		"$stage/usr/share/gir-1.0/AccountsService-1.0.gir"
+}
+
+trim_libdrm_devel()
+{
+	local stage=$1
+
+	rm -rf -- "$stage/usr/include/libdrm"
+	rm -f -- "$stage/usr/include/xf86drm.h" \
+		"$stage/usr/include/xf86drmMode.h" \
+		"$stage/usr/include/libsync.h" \
+		"$stage/usr/lib64/libdrm.so" \
+		"$stage/usr/lib64/pkgconfig/libdrm.pc"
 }
 
 trim_gtk4_devel()
@@ -861,6 +912,7 @@ write_extension_metadata()
 	local accountsservice_revision=${14}
 	local gnome_desktop_revision=${15}
 	local renderer_revision=${16}
+	local libdrm_revision=${17}
 
 	install -d "$release_dir" "$metadata_dir"
 	printf 'ID=%s\nVERSION_ID=%s\nSYSEXT_ID=pronk\nEXTENSION_RELOAD_MANAGER=1\n' \
@@ -878,6 +930,7 @@ write_extension_metadata()
 		"PRONK_REVISION=$pronk_revision" \
 		"CASTKMS_REVISION=$castkms_revision" \
 		"CASTKMS_RENDERER_REVISION=$renderer_revision" \
+		"LIBDRM_REVISION=$libdrm_revision" \
 		"MUTTER_REVISION=$mutter_revision" \
 		"CONTROL_CENTER_REVISION=$control_center_revision" \
 		"WIREPLUMBER_REVISION=$wireplumber_revision" \
@@ -909,6 +962,7 @@ validate_stage()
 		usr/bin/pronkd \
 		usr/bin/pronkctl \
 		usr/libexec/castkms/castkms-rendererd \
+		usr/lib64/libdrm.so.2 \
 		usr/lib/systemd/system/castkms-renderer.service \
 		usr/lib/systemd/system/multi-user.target.wants/castkms-renderer.service \
 		usr/bin/gnome-control-center \
@@ -926,6 +980,8 @@ validate_stage()
 
 	find "$stage/usr/lib64" -name 'libmutter-*.so.*' -print -quit | grep -q . || \
 		die 'staged extension is missing the Mutter shared library'
+	[[ ! -e $stage/usr/lib64/pkgconfig/libdrm.pc ]] || \
+		die 'staged extension retains libdrm development metadata'
 	find "$stage/usr/lib64" -name 'libaccountsservice.so.1*' -type f -print -quit | grep -q . || \
 		die 'staged extension is missing the AccountsService shared library'
 	find "$stage/usr/lib64" -name 'libgnome-desktop-4.so.2*' -type f -print -quit | grep -q . || \
@@ -953,6 +1009,7 @@ validate_stage()
 		PRONK_REVISION \
 		CASTKMS_REVISION \
 		CASTKMS_RENDERER_REVISION \
+		LIBDRM_REVISION \
 		MUTTER_REVISION \
 		CONTROL_CENTER_REVISION \
 		WIREPLUMBER_REVISION \
@@ -1076,8 +1133,10 @@ build_in_container()
 	build_gtk4 "$stage"
 	build_gnome_desktop "$stage"
 	build_accountsservice "$stage"
+	build_libdrm "$stage"
 	build_mutter "$stage"
 	build_control_center "$stage"
+	trim_libdrm_devel "$stage"
 	trim_gsettings_desktop_schemas_devel "$stage"
 	trim_gtk4_devel "$stage"
 	trim_gnome_desktop_devel "$stage"
@@ -1106,6 +1165,7 @@ build_extension()
 	local accountsservice_revision
 	local gnome_desktop_revision
 	local renderer_revision
+	local libdrm_revision
 
 	ensure_state_directories
 	require_source_bundle
@@ -1117,6 +1177,7 @@ build_extension()
 	pronk_revision=$(git_revision "$pronk_source")
 	castkms_revision=$(git_head_revision "$castkms_source")
 	renderer_revision=$(git_revision "$renderer_source")
+	libdrm_revision=$(git_revision "$libdrm_source")
 	mutter_revision=$(git_revision "$mutter_source")
 	control_center_revision=$(git_revision "$control_center_source")
 	wireplumber_revision=$(git_revision "$wireplumber_source")
@@ -1142,7 +1203,7 @@ build_extension()
 		"$packaging_revision" "$pronk_revision" "$castkms_revision" \
 		"$mutter_revision" "$control_center_revision" \
 		"$wireplumber_revision" "$gvc_revision" "$gvdb_revision" \
-		"$libgxdp_revision" "$gsettings_revision" "$gtk_revision" "$accountsservice_revision" "$gnome_desktop_revision" "$renderer_revision"
+		"$libgxdp_revision" "$gsettings_revision" "$gtk_revision" "$accountsservice_revision" "$gnome_desktop_revision" "$renderer_revision" "$libdrm_revision"
 	validate_stage "$temporary_stage"
 	if running_host_matches_target; then
 		validate_host_abi "$temporary_stage"
@@ -1424,7 +1485,7 @@ check)
 	check_scripts
 	;;
 __build-in-container)
-	(($# == 17)) || die 'invalid internal build invocation'
+	(($# == 18)) || die 'invalid internal build invocation'
 	case "$3" in
 	true|false)
 		run_tests=$3

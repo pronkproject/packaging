@@ -6,10 +6,11 @@ stored in another project: the SRPM helper generates the Mutter and GNOME
 Control Center patch series directly from their pinned branches with
 `git format-patch`.
 
-The package set contains Pronk, replacement Mutter and GNOME Control Center
-packages, WirePlumber 0.5.15, GNOME 51 desktop schemas, GTK 4.23,
+The package set contains Pronk, replacement libdrm, Mutter, and GNOME Control
+Center packages, WirePlumber 0.5.15, GNOME 51 desktop schemas, GTK 4.23,
 AccountsService 26.27.3, its soname 0 compatibility library, GNOME desktop 51,
-and the privileged CastKMS renderer. The additional GVDB,
+and the privileged CastKMS renderer. A pinned libdrm fork supplies the
+constraints-list event callback used by Mutter. The additional GVDB,
 libgnome-volume-control, and libgxdp submodules supply content omitted from
 GitLab-generated source archives. The CastKMS submodule pins the complete
 kernel source that supplies both the driver and its DRM infrastructure; it is
@@ -20,8 +21,8 @@ not an out-of-tree module source.
 On Fedora Silverblue, the checked-out userspace stack can be built without
 installing development packages into a transient `/usr` overlay. The helper
 builds Pronk, GNOME desktop schemas, GTK, AccountsService, GNOME desktop,
-Mutter, GNOME Settings, WirePlumber, and the CastKMS renderer in a dedicated
-rootless Podman image, then publishes only their runtime files as a
+libdrm, Mutter, GNOME Settings, WirePlumber, and the CastKMS renderer in a
+dedicated rootless Podman image, then publishes only their runtime files as a
 `systemd-sysext` system extension. It also stages the RPM Fusion GStreamer x264
 encoder and its runtime library, so those packages must be available from the
 host's enabled repositories:
@@ -36,12 +37,16 @@ manifest. It does not search sibling repositories or accept source-path
 overrides. To test a local change, check out the desired commit or branch
 inside the corresponding submodule and edit it there; dirty submodule
 worktrees are supported for userspace builds. GNOME desktop schemas, GTK,
-AccountsService, and GNOME desktop are built first so Mutter and GNOME Settings
-see their GNOME 51 APIs and the extension carries the compiled schemas cache.
-Mutter and GNOME Settings consume the separately pinned GVDB,
+AccountsService, and GNOME desktop are built first so Mutter and GNOME
+Settings see their GNOME 51 APIs. libdrm is built before Mutter to supply
+the typed constraints-list event callback. The extension carries the compiled
+schemas cache. Mutter and GNOME Settings consume the separately pinned GVDB,
 libgnome-volume-control, and libgxdp submodules as their Meson subprojects.
 WirePlumber is built directly from its submodule rather than copied from an
-outside RPM build. Run `git submodule update --init` if any source is missing.
+outside RPM build. The extension includes the libdrm runtime library while
+Mutter builds against its staged headers and pkg-config metadata. Run
+`git submodule update --init` if any source is missing.
+
 The renderer is installed as a system service with the initial-namespace
 `CAP_SYS_ADMIN` required to issue renderer endpoints. Mutter retains only
 monitor-control and final-image capture issuance; Pronk receives final images,
@@ -152,6 +157,7 @@ Then build any package into an output directory:
 ```sh
 scripts/make-srpm pronk ./srpms
 scripts/make-srpm castkms-renderer ./srpms
+scripts/make-srpm libdrm ./srpms
 scripts/make-srpm wireplumber ./srpms
 scripts/make-srpm gsettings-desktop-schemas ./srpms
 scripts/make-srpm gtk4 ./srpms
@@ -162,7 +168,9 @@ scripts/make-srpm mutter ./srpms
 scripts/make-srpm gnome-control-center ./srpms
 ```
 
-The helper archives only the commits recorded by the submodules. For Mutter
+The helper archives only the commits recorded by the submodules. Build and
+install the libdrm and libdrm-devel RPMs before building Mutter, whose
+constraints notifications require the fork's typed event callback. For Mutter
 and GNOME Control Center it archives the upstream base named in the spec and
 generates the remaining commits as patches. It verifies that the resulting
 filenames exactly match the spec before invoking `rpmbuild`.
@@ -176,13 +184,13 @@ Select a suitable installed rustup toolchain with `CARGO_TOOLCHAIN=stable` when
 the system Cargo is older. Binary package builds consume only the resulting
 SRPMs and do not contact source hosting or crates.io.
 
-Build GNOME desktop schemas, GTK, AccountsService, its compatibility library,
-GNOME desktop, and WirePlumber before Pronk. Build the CastKMS renderer against
-the same kernel as the display stack. Build the replacement Mutter and
-GNOME Control Center packages before updating a test machine. These packages
-target Fedora 44 and replace core desktop components, so keep a working
-recovery path while testing. RPM Fusion Free is required for the H.264 encoder supplied by
-`gstreamer1-plugins-ugly`.
+Build libdrm, GNOME desktop schemas, GTK, AccountsService, its compatibility
+library, GNOME desktop, and WirePlumber before Mutter and Pronk. Build the
+CastKMS renderer against the same kernel as the display stack. Build the
+replacement Mutter and GNOME Control Center packages before updating a test
+machine. These packages replace core desktop components, so keep a working
+recovery path while testing. RPM Fusion Free is required for the H.264
+encoder supplied by `gstreamer1-plugins-ugly`.
 
 To update a package, first advance the appropriate source submodule. If the
 upstream base changes, update the spec's `pronk_base` at the same time. A patch

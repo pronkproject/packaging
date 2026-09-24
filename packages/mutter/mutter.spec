@@ -17,7 +17,7 @@
 
 Name:          mutter
 Version:       51~rc
-Release:       100.pronk4%{?dist}
+Release:       100.pronk5%{?dist}
 Summary:       Window and compositing manager based on Clutter
 
 # Automatically converted from old format: GPLv2+ - review is highly recommended.
@@ -164,6 +164,9 @@ Patch0232:      0133-kms-Honor-framebuffer-allocation-alignments.patch
 Patch0233:      0134-backends-native-Accept-CastKMS-CEC-monitor-support.patch
 Patch0234:      0135-kms-Bound-preparation-waits-for-blocking-display-cha.patch
 Patch0235:      0136-native-Keep-CastKMS-renderer-authority-out-of-Mutter.patch
+Patch0236:      0137-kms-Rebuild-onscreens-when-constraints-change.patch
+Patch0237:      0138-kms-Consume-typed-constraints-list-notifications.patch
+Patch0238:      0139-kms-Gate-constraints-events-on-libdrm-support.patch
 
 %gnome_check_version
 
@@ -204,6 +207,7 @@ BuildRequires: pkgconfig(glycin-2)
 BuildRequires: pkgconfig(gnome-desktop-4)
 BuildRequires: pkgconfig(gudev-1.0)
 BuildRequires: pkgconfig(libdrm) >= %{libdrm_version}
+BuildRequires: libdrm-devel >= 2.4.134-100.pronk1
 BuildRequires: pkgconfig(libei-1.0) >= %{libei_version}
 BuildRequires: pkgconfig(libeis-1.0) >= %{libei_version}
 BuildRequires: pkgconfig(libstartup-notification-1.0)
@@ -218,6 +222,7 @@ BuildRequires: pkgconfig(xwayland)
 BuildRequires: python3-dbusmock
 
 Requires: gnome-control-center-filesystem
+Requires: libdrm >= 2.4.134-100.pronk1
 Requires: glib2%{?_isa} >= %{glib_version}
 Requires: gsettings-desktop-schemas%{?_isa} >= %{gsettings_desktop_schemas_version}
 Requires: gnome-settings-daemon

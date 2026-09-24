@@ -93,6 +93,7 @@ repositories = {
     "pronk_commit": root / "sources/pronk",
     "castkms_commit": root / "sources/castkms",
     "castkms_renderer_commit": root / "sources/castkms-renderer",
+    "libdrm_commit": root / "sources/libdrm",
     "mutter_commit": root / "sources/mutter",
     "gnome_control_center_commit": root / "sources/gnome-control-center",
     "wireplumber_commit": root / "sources/wireplumber",
@@ -111,6 +112,13 @@ for key, repository in repositories.items():
 
 for package in ("mutter", "gnome-control-center"):
     require_patch_base(package, root / "sources" / package)
+
+libdrm_spec = (root / "packages/libdrm/libdrm.spec").read_text()
+libdrm_commit = re.search(
+    r"^%global pronk_commit[ \t]+([0-9a-f]{40})$", libdrm_spec, re.MULTILINE
+)
+if libdrm_commit is None or libdrm_commit.group(1) != components["libdrm_commit"]:
+    fail("libdrm RPM source differs from the compatibility manifest")
 
 gsettings_spec = (root / "packages/gsettings-desktop-schemas/gsettings-desktop-schemas.spec").read_text()
 gsettings_base = re.search(
@@ -210,6 +218,7 @@ for key, (path, constant) in constant_checks.items():
 
 castkms_uapi = root / "sources/castkms/include/uapi/drm"
 mutter_uapi = root / "sources/mutter/src/backends/native"
+libdrm_header = root / "sources/libdrm/xf86drm.h"
 cross_component_defines = [
     (
         "generic capture grant capability",
@@ -278,6 +287,19 @@ cross_component_defines = [
 for label, kernel_path, mutter_path, name, key in cross_component_defines:
     expect(f"kernel {label}", c_define(kernel_path, name), interfaces[key])
     expect(f"Mutter {label}", c_define(mutter_path, name), interfaces[key])
+
+expect(
+    "kernel constraints-list closed flag",
+    c_define(castkms_uapi / "drm_constraints.h", "DRM_KMS_CONSTRAINTS_LIST_CLOSED"),
+    interfaces["drm_kms_constraints_list_closed"],
+)
+expect(
+    "libdrm constraints-list closed flag",
+    c_define(libdrm_header, "DRM_KMS_CONSTRAINTS_LIST_CLOSED"),
+    interfaces["drm_kms_constraints_list_closed"],
+)
+if "kms_constraints_list_changed_handler" not in libdrm_header.read_text():
+    fail("libdrm does not expose constraints-list notifications")
 
 expect(
     "kernel CastKMS renderer version",
