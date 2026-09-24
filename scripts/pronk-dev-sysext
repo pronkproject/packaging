@@ -1163,7 +1163,8 @@ install_extension()
 	sudo install -d -m 0755 -o root -g root \
 		/etc/pronk-sysext \
 		/etc/systemd/system-generators \
-		/etc/systemd/sysext.conf.d
+		/etc/systemd/sysext.conf.d \
+		/etc/systemd/system
 	sudo install -m 0644 -o root -g root "$manifest" /etc/pronk-sysext/manifest
 	sudo install -m 0755 -o root -g root \
 		"$script_dir/sysext/pronk-sysext-generator" \
