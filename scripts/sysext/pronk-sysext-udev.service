@@ -1,0 +1,13 @@
+[Unit]
+Description=Apply Pronk DMA-heap access policy after system-extension activation
+After=systemd-sysext.service
+Before=display-manager.service graphical.target
+ConditionPathExists=/run/extensions/pronk
+
+[Service]
+Type=oneshot
+ExecStart=/usr/bin/udevadm control --reload-rules
+ExecStart=/usr/bin/udevadm trigger --action=add --subsystem-match=dma_heap --sysname-match=system
+
+[Install]
+WantedBy=graphical.target
