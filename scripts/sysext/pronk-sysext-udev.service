@@ -8,6 +8,7 @@ ConditionPathExists=/run/extensions/pronk
 Type=oneshot
 ExecStart=/usr/bin/udevadm control --reload-rules
 ExecStart=/usr/bin/udevadm trigger --action=add --subsystem-match=dma_heap --sysname-match=system
+ExecStartPost=/usr/bin/systemctl --no-block start castkms-renderer.service
 
 [Install]
 WantedBy=graphical.target

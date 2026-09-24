@@ -3,7 +3,7 @@ format_version = 1
 [components]
 pronk_commit = "5607650057424552b35310d81a2fa382ca27897b"
 castkms_commit = "a0f5dd8d92d67ea100fbc2032f12220320c37247"
-castkms_renderer_commit = "c036d4aa813495fe7d78b733fc87b5960539b311"
+castkms_renderer_commit = "94c8ed1517c8052a38a31e6064a6bf9cfd469e52"
 mutter_commit = "d19cdd8fbe69127a993321c130e58a7285d1e2de"
 gnome_control_center_commit = "db25fc88934931b7aaf63070000604580079cb08"
 wireplumber_commit = "bc4fa8f5e84806f86530c97cb35283eecc3ec081"
