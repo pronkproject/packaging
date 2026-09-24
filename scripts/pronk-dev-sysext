@@ -707,6 +707,20 @@ trim_accountsservice_devel()
 {
 	local stage=$1
 
+	# Fedora supplies the system AccountsService daemon.  This extension only
+	# needs the newer client ABI used by the GNOME 51 applications.  Shipping
+	# the daemon's D-Bus activation and policy files would replace host files
+	# from /var/lib, which carries the wrong SELinux label after a plain
+	# directory deployment and prevents dbus-broker from starting.
+	rm -f -- "$stage/usr/libexec/accounts-daemon" \
+		"$stage/usr/lib/systemd/system/accounts-daemon.service" \
+		"$stage/usr/share/dbus-1/interfaces/org.freedesktop.Accounts.xml" \
+		"$stage/usr/share/dbus-1/interfaces/org.freedesktop.Accounts.User.xml" \
+		"$stage/usr/share/dbus-1/system.d/org.freedesktop.Accounts.conf" \
+		"$stage/usr/share/dbus-1/system-services/org.freedesktop.Accounts.service" \
+		"$stage/usr/share/polkit-1/actions/org.freedesktop.accounts.policy"
+	rm -rf -- "$stage/usr/share/accountsservice"
+
 	rm -rf -- "$stage/usr/include/accountsservice-1.0" \
 		"$stage/usr/share/gtk-doc/html/libaccountsservice" \
 		"$stage/usr/share/vala/vapi"
@@ -840,7 +854,6 @@ validate_stage()
 		usr/bin/pronkctl \
 		usr/bin/gnome-control-center \
 		usr/bin/wireplumber \
-		usr/libexec/accounts-daemon \
 		usr/libexec/pronk/pronk-chromiacast \
 		usr/share/glib-2.0/schemas/gschemas.compiled \
 		usr/lib64/gstreamer-1.0/libgstx264.so \
@@ -858,6 +871,15 @@ validate_stage()
 		die 'staged extension is missing the GNOME desktop shared library'
 	find "$stage/usr/lib64" -name 'libx264.so.*' -type f -print -quit | grep -q . || \
 		die 'staged extension is missing the x264 shared library'
+	for forbidden in \
+		usr/libexec/accounts-daemon \
+		usr/lib/systemd/system/accounts-daemon.service \
+		usr/share/dbus-1/system.d/org.freedesktop.Accounts.conf \
+		usr/share/dbus-1/system-services/org.freedesktop.Accounts.service \
+		usr/share/polkit-1/actions/org.freedesktop.accounts.policy; do
+		[[ ! -e $stage/$forbidden ]] || \
+			die "staged extension must not replace the host /$forbidden"
+	done
 	for manifest_key in \
 		BUILD_ID \
 		HOST_ID \
@@ -912,7 +934,6 @@ validate_host_abi()
 		"$x264_plugin" \
 		"$stage/usr/bin/gnome-control-center" \
 		"$stage/usr/bin/wireplumber" \
-		"$stage/usr/libexec/accounts-daemon" \
 		"$stage/usr/bin/pronkd" \
 		/usr/bin/gnome-shell; do
 		output=$(LD_LIBRARY_PATH="$library_path" ldd -r "$target" 2>&1) || {
