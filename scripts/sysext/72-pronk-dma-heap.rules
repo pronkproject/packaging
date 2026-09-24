@@ -1,0 +1,4 @@
+# The system DMA heap is virtual, so it has no physical ancestor from which
+# systemd's seat rules can discover its seat.  Set one before 73-seat-late.rules
+# runs so its uaccess builtin grants the active desktop user an ACL.
+SUBSYSTEM=="dma_heap", KERNEL=="system", ENV{ID_SEAT}="seat0", TAG+="seat", TAG+="uaccess"

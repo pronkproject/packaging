@@ -792,6 +792,20 @@ build_pronk()
 		"$stage/usr/lib/systemd/user/sockets.target.wants/pronk-chromiacast.socket"
 }
 
+stage_castkms_runtime_policy()
+{
+	local stage=$1
+
+	# dma_heap devices are virtual and do not inherit a seat from a parent
+	# device.  Mark the system heap as belonging to the logged-in seat before
+	# systemd's 73-seat-late.rules applies its uaccess ACL.  Pronk's capture
+	# worker can then allocate its DMA-BUF pool without joining the broad video
+	# group.
+	install -D -m 0644 \
+		"$script_dir/sysext/72-pronk-dma-heap.rules" \
+		"$stage/usr/lib/udev/rules.d/72-pronk-dma-heap.rules"
+}
+
 write_extension_metadata()
 {
 	local stage=$1
@@ -858,6 +872,7 @@ validate_stage()
 		usr/share/glib-2.0/schemas/gschemas.compiled \
 		usr/lib64/gstreamer-1.0/libgstx264.so \
 		usr/lib/systemd/user/pronk-chromiacast.socket \
+		usr/lib/udev/rules.d/72-pronk-dma-heap.rules \
 		usr/lib/extension-release.d/extension-release.pronk \
 		usr/lib/pronk-sysext/manifest; do
 		[[ -e $stage/$required ]] || die "staged extension is missing /$required"
@@ -1016,6 +1031,7 @@ build_in_container()
 	trim_gnome_desktop_devel "$stage"
 	trim_accountsservice_devel "$stage"
 	build_pronk "$stage"
+	stage_castkms_runtime_policy "$stage"
 	write_extension_metadata "$stage" "$identifier" "$@"
 	validate_target_abi "$stage"
 }
