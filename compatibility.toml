@@ -1,9 +1,10 @@
 format_version = 1
 
 [components]
-pronk_commit = "f5eb1581d6db0d94ef98815c1d39f04e0f9cfe9e"
+pronk_commit = "5607650057424552b35310d81a2fa382ca27897b"
 castkms_commit = "a0f5dd8d92d67ea100fbc2032f12220320c37247"
-mutter_commit = "f4ada9574b946df50fcc0074de6dd8e109bcad9b"
+castkms_renderer_commit = "c036d4aa813495fe7d78b733fc87b5960539b311"
+mutter_commit = "d19cdd8fbe69127a993321c130e58a7285d1e2de"
 gnome_control_center_commit = "db25fc88934931b7aaf63070000604580079cb08"
 wireplumber_commit = "bc4fa8f5e84806f86530c97cb35283eecc3ec081"
 gsettings_desktop_schemas_commit = "1db238b6a349ea7fae6f1c0713afe04d1bb7ea5c"

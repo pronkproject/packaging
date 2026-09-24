@@ -92,6 +92,7 @@ components = manifest["components"]
 repositories = {
     "pronk_commit": root / "sources/pronk",
     "castkms_commit": root / "sources/castkms",
+    "castkms_renderer_commit": root / "sources/castkms-renderer",
     "mutter_commit": root / "sources/mutter",
     "gnome_control_center_commit": root / "sources/gnome-control-center",
     "wireplumber_commit": root / "sources/wireplumber",
@@ -163,6 +164,7 @@ if qrcodegen_base.group(1) != components["qrcodegen_commit"]:
     fail("QR-Code-generator source base differs from the compatibility manifest")
 
 pronk = root / "sources/pronk"
+renderer = root / "sources/castkms-renderer"
 cargo = tomllib.loads((pronk / "Cargo.toml").read_text())
 chromiacast = cargo["workspace"]["dependencies"]["chromiacast"]
 chromiacast_version = chromiacast["version"] if isinstance(chromiacast, dict) else chromiacast
@@ -183,15 +185,15 @@ constant_checks = {
         "CAP_CEC",
     ),
     "castkms_renderer_version": (
-        pronk / "crates/castkms-sys/src/lib.rs",
+        renderer / "crates/castkms-sys/src/lib.rs",
         "RENDERER_VERSION",
     ),
     "castkms_renderer_constraints_version": (
-        pronk / "crates/castkms-sys/src/lib.rs",
+        renderer / "crates/castkms-sys/src/lib.rs",
         "RENDERER_CONSTRAINTS_VERSION",
     ),
     "castkms_renderer_job_version": (
-        pronk / "crates/castkms-sys/src/lib.rs",
+        renderer / "crates/castkms-sys/src/lib.rs",
         "RENDERER_JOB_VERSION",
     ),
     "backend_protocol_major": (
@@ -272,32 +274,16 @@ cross_component_defines = [
         "DRM_CASTKMS_MONITOR_CAP_CEC",
         "castkms_monitor_cec_cap",
     ),
-    (
-        "CastKMS renderer version",
-        castkms_uapi / "castkms_drm.h",
-        mutter_uapi / "meta-drm-castkms.h",
-        "DRM_CASTKMS_RENDERER_VERSION",
-        "castkms_renderer_version",
-    ),
 ]
 for label, kernel_path, mutter_path, name, key in cross_component_defines:
     expect(f"kernel {label}", c_define(kernel_path, name), interfaces[key])
     expect(f"Mutter {label}", c_define(mutter_path, name), interfaces[key])
 
-for label, name in [
-    ("renderer empty state", "DRM_CASTKMS_RENDERER_STATE_EMPTY"),
-    ("renderer configured state", "DRM_CASTKMS_RENDERER_STATE_CONFIGURED"),
-    ("renderer publishing state", "DRM_CASTKMS_RENDERER_STATE_PUBLISHING"),
-    ("renderer published state", "DRM_CASTKMS_RENDERER_STATE_PUBLISHED"),
-    ("renderer withdrawn state", "DRM_CASTKMS_RENDERER_STATE_WITHDRAWN"),
-    ("renderer creation command", "DRM_CASTKMS_CREATE_RENDERER"),
-    ("renderer query command", "DRM_CASTKMS_RENDERER_QUERY"),
-]:
-    expect(
-        f"Mutter {label}",
-        c_define(mutter_uapi / "meta-drm-castkms.h", name),
-        c_define(castkms_uapi / "castkms_drm.h", name),
-    )
+expect(
+    "kernel CastKMS renderer version",
+    c_define(castkms_uapi / "castkms_drm.h", "DRM_CASTKMS_RENDERER_VERSION"),
+    interfaces["castkms_renderer_version"],
+)
 
 for label, name, key in [
     (
@@ -397,13 +383,13 @@ if mutter_interface is None:
 expected_broker_methods = {
     "CreateDisplaySession": [
         ("in", "u"), ("in", "u"), ("in", "u"), ("in", "u"),
-        ("out", "h"), ("out", "h"), ("out", "t"), ("out", "h"),
-        ("out", "s"), ("out", "t"),
+        ("out", "h"), ("out", "h"), ("out", "t"),
     ],
-    "AcquireRenderer": [("in", "t"), ("out", "h"), ("out", "t")],
-    "ReleaseRenderer": [("in", "t"), ("in", "t")],
     "ReleaseDisplaySession": [("in", "t")],
 }
+actual_broker_methods = {method.get("name") for method in mutter_interface.findall("method")}
+if actual_broker_methods != set(expected_broker_methods):
+    fail(f"Mutter CastKms broker exposes {actual_broker_methods}, expected monitor/capture only")
 for name, expected_arguments in expected_broker_methods.items():
     method = mutter_interface.find(f"method[@name='{name}']")
     if method is None:
@@ -453,6 +439,24 @@ if f"BuildRequires:  rust >= {requirements['rust']}" not in pronk_spec:
     fail("Pronk's RPM Rust floor differs from the compatibility manifest")
 if f"%global pipewire_version {requirements['pronk_pipewire_api']}" not in pronk_spec:
     fail("Pronk's RPM PipeWire floor differs from the compatibility manifest")
+
+renderer_cargo = tomllib.loads((renderer / "Cargo.toml").read_text())
+renderer_rust = renderer_cargo["workspace"]["package"]["rust-version"]
+if renderer_rust != requirements["rust"]:
+    fail(f"CastKMS renderer Rust floor is {renderer_rust}, expected {requirements['rust']}")
+renderer_spec = (root / "packages/castkms-renderer/castkms-renderer.spec").read_text()
+if f"BuildRequires:  rust >= {renderer_rust}" not in renderer_spec:
+    fail("CastKMS renderer RPM Rust floor differs from its source")
+renderer_unit = (renderer / "systemd/castkms-renderer.service").read_text()
+for directive in (
+    "ExecStart=/usr/libexec/castkms/castkms-rendererd",
+    "CapabilityBoundingSet=CAP_SYS_ADMIN",
+    "AmbientCapabilities=CAP_SYS_ADMIN",
+    "PrivateNetwork=yes",
+    "DevicePolicy=closed",
+):
+    if not re.search(rf"^{re.escape(directive)}$", renderer_unit, re.MULTILINE):
+        fail(f"CastKMS renderer service lacks {directive}")
 
 mutter_spec = (root / "packages/mutter/mutter.spec").read_text()
 if f"%global pipewire_version {requirements['tested_pipewire']}" not in mutter_spec:

@@ -4,6 +4,9 @@
 [submodule "sources/castkms"]
 	path = sources/castkms
 	url = https://github.com/pronkproject/castkms.git
+[submodule "sources/castkms-renderer"]
+	path = sources/castkms-renderer
+	url = https://github.com/pronkproject/castkms-renderer.git
 [submodule "sources/mutter"]
 	path = sources/mutter
 	url = https://github.com/pronkproject/mutter.git

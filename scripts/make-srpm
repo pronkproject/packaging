@@ -5,7 +5,7 @@ set -eu
 usage()
 {
   printf 'usage: %s PACKAGE [OUTPUT_DIRECTORY]\n' "$0" >&2
-  printf 'packages: pronk wireplumber gsettings-desktop-schemas gtk4 accountsservice accountsservice-compat gnome-desktop3 mutter gnome-control-center\n' >&2
+  printf 'packages: pronk castkms-renderer wireplumber gsettings-desktop-schemas gtk4 accountsservice accountsservice-compat gnome-desktop3 mutter gnome-control-center\n' >&2
   exit 2
 }
 
@@ -71,9 +71,9 @@ generate_patches()
 }
 
 case $package in
-pronk)
-  "$repository_root/scripts/make-pronk-sources" \
-    "$repository_root/sources/pronk" "$spec" "$work_dir/SOURCES"
+pronk|castkms-renderer)
+  "$repository_root/scripts/make-rust-sources" \
+    "$repository_root/sources/$package" "$spec" "$work_dir/SOURCES"
   ;;
 gsettings-desktop-schemas)
   base=$(spec_macro pronk_base)

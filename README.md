@@ -8,8 +8,8 @@ Control Center patch series directly from their pinned branches with
 
 The package set contains Pronk, replacement Mutter and GNOME Control Center
 packages, WirePlumber 0.5.15, GNOME 51 desktop schemas, GTK 4.23,
-AccountsService 26.27.3, its soname 0 compatibility library, and GNOME
-desktop 51. The additional GVDB,
+AccountsService 26.27.3, its soname 0 compatibility library, GNOME desktop 51,
+and the privileged CastKMS renderer. The additional GVDB,
 libgnome-volume-control, and libgxdp submodules supply content omitted from
 GitLab-generated source archives. The CastKMS submodule pins the complete
 kernel source that supplies both the driver and its DRM infrastructure; it is
@@ -20,8 +20,8 @@ not an out-of-tree module source.
 On Fedora Silverblue, the checked-out userspace stack can be built without
 installing development packages into a transient `/usr` overlay. The helper
 builds Pronk, GNOME desktop schemas, GTK, AccountsService, GNOME desktop,
-Mutter, GNOME Settings, and WirePlumber in a dedicated rootless Podman image,
-then publishes only their runtime files as a
+Mutter, GNOME Settings, WirePlumber, and the CastKMS renderer in a dedicated
+rootless Podman image, then publishes only their runtime files as a
 `systemd-sysext` system extension. It also stages the RPM Fusion GStreamer x264
 encoder and its runtime library, so those packages must be available from the
 host's enabled repositories:
@@ -42,6 +42,12 @@ Mutter and GNOME Settings consume the separately pinned GVDB,
 libgnome-volume-control, and libgxdp submodules as their Meson subprojects.
 WirePlumber is built directly from its submodule rather than copied from an
 outside RPM build. Run `git submodule update --init` if any source is missing.
+The renderer is installed as a system service with the initial-namespace
+`CAP_SYS_ADMIN` required to issue renderer endpoints. Mutter retains only
+monitor-control and final-image capture issuance; Pronk receives final images,
+never compositor source buffers. The renderer service has no network access and
+publishes GPU constraints independently. If it cannot run, CastKMS continues
+with its built-in HOST renderer.
 
 The compatibility manifest remains the contract for a publishable package
 set, so `scripts/check-compatibility` can fail while deliberately testing a
@@ -131,6 +137,7 @@ Then build any package into an output directory:
 
 ```sh
 scripts/make-srpm pronk ./srpms
+scripts/make-srpm castkms-renderer ./srpms
 scripts/make-srpm wireplumber ./srpms
 scripts/make-srpm gsettings-desktop-schemas ./srpms
 scripts/make-srpm gtk4 ./srpms
@@ -147,18 +154,20 @@ generates the remaining commits as patches. It verifies that the resulting
 filenames exactly match the spec before invoking `rpmbuild`.
 
 The helper needs Git, Python 3.11 or newer, `rpmbuild`, gzip, bzip2, and diff.
-The Pronk SRPM also needs Cargo and network access to create its offline
-dependency archive. Cargo 1.85 or newer is required to inspect every vendored
-manifest, including target-specific dependencies that use the 2024 edition.
+The Pronk and CastKMS renderer SRPMs also need Cargo and network access to
+create their offline dependency archives. Cargo 1.85 or newer is required to
+inspect every vendored manifest, including target-specific dependencies that
+use the 2024 edition.
 Select a suitable installed rustup toolchain with `CARGO_TOOLCHAIN=stable` when
 the system Cargo is older. Binary package builds consume only the resulting
 SRPMs and do not contact source hosting or crates.io.
 
 Build GNOME desktop schemas, GTK, AccountsService, its compatibility library,
-GNOME desktop, and WirePlumber before Pronk. Build the replacement Mutter and
-GNOME Control Center packages before updating a test machine. These packages target Fedora 44
-and replace core desktop components, so keep a working recovery path
-while testing. RPM Fusion Free is required for the H.264 encoder supplied by
+GNOME desktop, and WirePlumber before Pronk. Build the CastKMS renderer against
+the same kernel as the display stack. Build the replacement Mutter and
+GNOME Control Center packages before updating a test machine. These packages
+target Fedora 44 and replace core desktop components, so keep a working
+recovery path while testing. RPM Fusion Free is required for the H.264 encoder supplied by
 `gstreamer1-plugins-ugly`.
 
 To update a package, first advance the appropriate source submodule. If the

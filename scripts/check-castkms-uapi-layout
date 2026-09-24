@@ -18,7 +18,7 @@ cc -std=c11 -Wall -Wextra -Werror \
 "$temporary/castkms-uapi-layout" >"$temporary/c-layout"
 
 cargo run --quiet --locked \
-  --manifest-path "$root/sources/pronk/Cargo.toml" \
+  --manifest-path "$root/sources/castkms-renderer/Cargo.toml" \
   -p castkms-sys --example uapi-layout >"$temporary/rust-layout"
 
 if ! diff -u "$temporary/c-layout" "$temporary/rust-layout"; then

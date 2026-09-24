@@ -17,7 +17,7 @@
 
 Name:          mutter
 Version:       51~rc
-Release:       100.pronk3%{?dist}
+Release:       100.pronk4%{?dist}
 Summary:       Window and compositing manager based on Clutter
 
 # Automatically converted from old format: GPLv2+ - review is highly recommended.
@@ -162,6 +162,8 @@ Patch0230:      0131-kms-Honor-plane-geometry-constraints.patch
 Patch0231:      0132-kms-Honor-conditional-YUV-property-constraints.patch
 Patch0232:      0133-kms-Honor-framebuffer-allocation-alignments.patch
 Patch0233:      0134-backends-native-Accept-CastKMS-CEC-monitor-support.patch
+Patch0234:      0135-kms-Bound-preparation-waits-for-blocking-display-cha.patch
+Patch0235:      0136-native-Keep-CastKMS-renderer-authority-out-of-Mutter.patch
 
 %gnome_check_version
 

@@ -22,7 +22,7 @@ work_dir=$(mktemp -d)
 trap 'rm -rf "$work_dir"' EXIT
 mkdir -p "$work_dir/cargo-home" "$work_dir/source"
 
-archive_root=pronk-$version
+archive_root=$(basename "$source_dir")-$version
 source_date_epoch=$(git -C "$source_dir" show -s --format=%ct HEAD)
 
 git -C "$source_dir" archive \

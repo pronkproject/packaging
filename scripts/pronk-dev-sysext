@@ -8,6 +8,7 @@ packaging_root=$(CDPATH='' cd -- "$script_dir/.." && pwd -P)
 
 pronk_source=$packaging_root/sources/pronk
 castkms_source=$packaging_root/sources/castkms
+renderer_source=$packaging_root/sources/castkms-renderer
 mutter_source=$packaging_root/sources/mutter
 control_center_source=$packaging_root/sources/gnome-control-center
 wireplumber_source=$packaging_root/sources/wireplumber
@@ -170,6 +171,7 @@ require_source_bundle()
 	require_command git
 	require_git_source_tree Pronk "$pronk_source"
 	require_git_source_tree CastKMS "$castkms_source"
+	require_git_source_tree 'CastKMS renderer' "$renderer_source"
 	require_git_source_tree Mutter "$mutter_source"
 	require_git_source_tree 'GNOME Settings' "$control_center_source"
 	require_git_source_tree WirePlumber "$wireplumber_source"
@@ -792,6 +794,27 @@ build_pronk()
 		"$stage/usr/lib/systemd/user/sockets.target.wants/pronk-chromiacast.socket"
 }
 
+build_castkms_renderer()
+{
+	local stage=$1
+	local target=$state_dir/builds/castkms-renderer
+
+	log 'Building the privileged CastKMS renderer'
+	CARGO_TARGET_DIR="$target" cargo build --locked --release \
+		--manifest-path "$renderer_source/Cargo.toml" -p castkms-rendererd
+	if $run_tests; then
+		CARGO_TARGET_DIR="$target" cargo test --locked \
+			--manifest-path "$renderer_source/Cargo.toml" --workspace
+	fi
+	install -D -m 0755 "$target/release/castkms-rendererd" \
+		"$stage/usr/libexec/castkms/castkms-rendererd"
+	install -D -m 0644 "$renderer_source/systemd/castkms-renderer.service" \
+		"$stage/usr/lib/systemd/system/castkms-renderer.service"
+	install -d "$stage/usr/lib/systemd/system/multi-user.target.wants"
+	ln -s ../castkms-renderer.service \
+		"$stage/usr/lib/systemd/system/multi-user.target.wants/castkms-renderer.service"
+}
+
 stage_castkms_runtime_policy()
 {
 	local stage=$1
@@ -825,6 +848,7 @@ write_extension_metadata()
 	local gtk_revision=${13}
 	local accountsservice_revision=${14}
 	local gnome_desktop_revision=${15}
+	local renderer_revision=${16}
 
 	install -d "$release_dir" "$metadata_dir"
 	printf 'ID=%s\nVERSION_ID=%s\nSYSEXT_ID=pronk\nEXTENSION_RELOAD_MANAGER=1\n' \
@@ -841,6 +865,7 @@ write_extension_metadata()
 		"PACKAGING_REVISION=$packaging_revision" \
 		"PRONK_REVISION=$pronk_revision" \
 		"CASTKMS_REVISION=$castkms_revision" \
+		"CASTKMS_RENDERER_REVISION=$renderer_revision" \
 		"MUTTER_REVISION=$mutter_revision" \
 		"CONTROL_CENTER_REVISION=$control_center_revision" \
 		"WIREPLUMBER_REVISION=$wireplumber_revision" \
@@ -871,6 +896,9 @@ validate_stage()
 	for required in \
 		usr/bin/pronkd \
 		usr/bin/pronkctl \
+		usr/libexec/castkms/castkms-rendererd \
+		usr/lib/systemd/system/castkms-renderer.service \
+		usr/lib/systemd/system/multi-user.target.wants/castkms-renderer.service \
 		usr/bin/gnome-control-center \
 		usr/bin/wireplumber \
 		usr/libexec/pronk/pronk-chromiacast \
@@ -911,6 +939,7 @@ validate_stage()
 		PACKAGING_REVISION \
 		PRONK_REVISION \
 		CASTKMS_REVISION \
+		CASTKMS_RENDERER_REVISION \
 		MUTTER_REVISION \
 		CONTROL_CENTER_REVISION \
 		WIREPLUMBER_REVISION \
@@ -955,6 +984,7 @@ validate_host_abi()
 		"$stage/usr/bin/gnome-control-center" \
 		"$stage/usr/bin/wireplumber" \
 		"$stage/usr/bin/pronkd" \
+		"$stage/usr/libexec/castkms/castkms-rendererd" \
 		/usr/bin/gnome-shell; do
 		output=$(LD_LIBRARY_PATH="$library_path" ldd -r "$target" 2>&1) || {
 			printf '%s\n' "$output" >&2
@@ -1036,6 +1066,7 @@ build_in_container()
 	trim_gnome_desktop_devel "$stage"
 	trim_accountsservice_devel "$stage"
 	build_pronk "$stage"
+	build_castkms_renderer "$stage"
 	stage_castkms_runtime_policy "$stage"
 	write_extension_metadata "$stage" "$identifier" "$@"
 	validate_target_abi "$stage"
@@ -1057,6 +1088,7 @@ build_extension()
 	local gtk_revision
 	local accountsservice_revision
 	local gnome_desktop_revision
+	local renderer_revision
 
 	ensure_state_directories
 	require_source_bundle
@@ -1067,6 +1099,7 @@ build_extension()
 	packaging_revision=$(git_revision "$packaging_root")
 	pronk_revision=$(git_revision "$pronk_source")
 	castkms_revision=$(git_head_revision "$castkms_source")
+	renderer_revision=$(git_revision "$renderer_source")
 	mutter_revision=$(git_revision "$mutter_source")
 	control_center_revision=$(git_revision "$control_center_source")
 	wireplumber_revision=$(git_revision "$wireplumber_source")
@@ -1092,7 +1125,7 @@ build_extension()
 		"$packaging_revision" "$pronk_revision" "$castkms_revision" \
 		"$mutter_revision" "$control_center_revision" \
 		"$wireplumber_revision" "$gvc_revision" "$gvdb_revision" \
-		"$libgxdp_revision" "$gsettings_revision" "$gtk_revision" "$accountsservice_revision" "$gnome_desktop_revision"
+		"$libgxdp_revision" "$gsettings_revision" "$gtk_revision" "$accountsservice_revision" "$gnome_desktop_revision" "$renderer_revision"
 	validate_stage "$temporary_stage"
 	if running_host_matches_target; then
 		validate_host_abi "$temporary_stage"
@@ -1218,6 +1251,7 @@ activate_extension()
 	sudo systemd-sysext refresh
 	sudo systemctl daemon-reload
 	systemctl --user daemon-reload
+	sudo systemctl start castkms-renderer.service
 	systemctl --user start pronk-chromiacast.socket
 	systemctl --user restart pipewire.service wireplumber.service
 	log 'Runtime services are active. Log out and back in before testing Mutter or Settings.'
@@ -1272,6 +1306,8 @@ show_status()
 	fi
 	printf 'Pronk socket: '
 	systemctl --user is-active pronk-chromiacast.socket 2>/dev/null || true
+	printf 'CastKMS renderer: '
+	systemctl is-active castkms-renderer.service 2>/dev/null || true
 }
 
 check_scripts()
@@ -1361,7 +1397,7 @@ check)
 	check_scripts
 	;;
 __build-in-container)
-	(($# == 16)) || die 'invalid internal build invocation'
+	(($# == 17)) || die 'invalid internal build invocation'
 	case "$3" in
 	true|false)
 		run_tests=$3
