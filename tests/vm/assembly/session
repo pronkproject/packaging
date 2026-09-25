@@ -1,0 +1,113 @@
+#!/bin/sh
+# SPDX-License-Identifier: GPL-2.0-or-later
+
+set -eu
+
+test "$#" -eq 5
+card=$1
+crtc_id=$2
+connector_id=$3
+width=$4
+height=$5
+test_root=$(mktemp -d /run/results/assembly.XXXXXXXX)
+runtime=$test_root/runtime
+config=$test_root/config
+data=$test_root/data
+compositor_pid=
+pipewire_pid=
+wireplumber_pid=
+
+cleanup()
+{
+	for child in "$wireplumber_pid" "$pipewire_pid" "$compositor_pid"; do
+		if test -n "$child"; then
+			kill -TERM "$child" 2>/dev/null || :
+			wait "$child" 2>/dev/null || :
+		fi
+	done
+}
+trap cleanup EXIT HUP INT TERM
+
+mkdir -p "$runtime" "$config/pipewire/pipewire.conf.d" \
+	"$config/wireplumber/wireplumber.conf.d" "$data/wireplumber/scripts"
+chmod 0700 "$runtime"
+cp /run/pronk-source/data/pipewire/80-pronk-remotes.conf \
+	"$config/pipewire/pipewire.conf.d/80-pronk-remotes.conf"
+cp /run/pronk-source/data/wireplumber/80-pronk-access.conf \
+	"$config/wireplumber/wireplumber.conf.d/80-pronk-access.conf"
+cp /run/pronk-source/data/wireplumber/scripts/pronk-private-policy.lua \
+	/run/pronk-source/data/wireplumber/scripts/pronk-policy-marker.lua \
+	"$data/wireplumber/scripts/"
+
+export XDG_CONFIG_HOME=$config
+export XDG_DATA_HOME=$data
+export XDG_RUNTIME_DIR=$runtime
+export PIPEWIRE_RUNTIME_DIR=$runtime
+export GST_REGISTRY=$test_root/gst-registry.bin
+export GST_DEBUG=2
+export G_DEBUG=fatal-criticals
+export WIREPLUMBER_CONFIG_DIR="$config/wireplumber:/usr/share/wireplumber"
+export WIREPLUMBER_DATA_DIR="$data/wireplumber:/usr/share/wireplumber"
+
+/usr/bin/mutter --wayland --display-server --no-x11 \
+	--mutter-plugin=/usr/lib64/mutter-51/plugins/libdefault.so \
+	>"$test_root/mutter.log" 2>&1 &
+compositor_pid=$!
+attempt=0
+until gdbus call --session --dest org.gnome.Mutter.DisplayConfig \
+	--object-path /org/gnome/Mutter/DisplayConfig \
+	--method org.gnome.Mutter.DisplayConfig.GetCurrentState >/dev/null 2>&1; do
+	attempt=$((attempt + 1))
+	if test "$attempt" -ge 400 || ! kill -0 "$compositor_pid" 2>/dev/null; then
+		tail -100 "$test_root/mutter.log" >&2
+		exit 1
+	fi
+	sleep 0.1
+done
+
+pipewire -c pipewire.conf >"$test_root/pipewire.log" 2>&1 &
+pipewire_pid=$!
+attempt=0
+while test ! -S "$runtime/pipewire-0-manager"; do
+	attempt=$((attempt + 1))
+	if test "$attempt" -ge 100 || ! kill -0 "$pipewire_pid" 2>/dev/null; then
+		tail -100 "$test_root/pipewire.log" >&2
+		exit 1
+	fi
+	sleep 0.05
+done
+
+wireplumber -c wireplumber.conf -p policy >"$test_root/wireplumber.log" 2>&1 &
+wireplumber_pid=$!
+attempt=0
+until timeout 1 pw-dump -r pipewire-0-manager 2>/dev/null | jq -e \
+	'.[] | select(.type == "PipeWire:Interface:Metadata" and
+	.props["metadata.name"] == "pronk-policy-v1" and
+	any(.metadata[]?; .subject == 0 and .key == "pronk.policy.version" and .value == 1))' \
+	>/dev/null; do
+	attempt=$((attempt + 1))
+	if test "$attempt" -ge 40 || ! kill -0 "$wireplumber_pid" 2>/dev/null; then
+		tail -100 "$test_root/wireplumber.log" >&2
+		exit 1
+	fi
+	sleep 0.05
+done
+
+printf 'Assembly logs: %s\n' "$test_root"
+set -- /run/pronk-source/target/debug/pronk-capture-mutter-media-live-test \
+	"$card" "$crtc_id" "$connector_id" "$width" "$height" \
+	"$runtime/pipewire-0-pronk-backend"
+if test -n "${PRONK_VM_RECEIVER:-}"; then
+	set -- "$@" --receiver "$PRONK_VM_RECEIVER"
+fi
+if RUST_LOG=debug RUST_BACKTRACE=1 \
+	timeout --signal=TERM --kill-after=5 90 "$@" \
+	>"$test_root/client.log" 2>&1; then
+	cat "$test_root/client.log"
+else
+	result=$?
+	tail -150 "$test_root/client.log" >&2
+	tail -150 "$test_root/mutter.log" >&2
+	tail -150 /run/results/renderer.log >&2
+	exit "$result"
+fi

@@ -1,0 +1,81 @@
+#!/bin/sh
+# SPDX-License-Identifier: GPL-2.0-or-later
+
+set -eux
+
+test "$#" -eq 4
+crtc_id=$1
+connector_id=$2
+width=$3
+height=$4
+test -f /run/extension/usr/lib/pronk-sysext/manifest
+test -x /run/pronk-source/target/debug/pronk-capture-mutter-media-live-test
+
+if test -f /run/kernel-build/fs/overlayfs/overlay.ko; then
+	insmod /run/kernel-build/fs/overlayfs/overlay.ko
+fi
+mount -t overlay overlay -o lowerdir=/run/extension/usr:/usr /usr
+if ! grep -Fqx "HOST_KERNEL_RELEASE=$(uname -r)" \
+	/usr/lib/pronk-sysext/manifest; then
+	if test "${PRONK_VM_ALLOW_KERNEL_RELEASE_MISMATCH:-0}" != 1; then
+		printf 'staged extension targets another kernel release\n' >&2
+		exit 1
+	fi
+	printf 'note: staged extension targets a different kernel release\n' >&2
+fi
+
+udevadm settle
+mkdir -p /run/udev/rules.d
+cp /run/test/61-pronk-vm-gpu.rules /run/udev/rules.d/
+udevadm control --reload
+udevadm trigger --subsystem-match=drm
+udevadm settle
+
+castkms_card=
+for card in /dev/dri/card[0-9]*; do
+	udevadm info --query=property --name="$card" \
+		> "/run/results/udev-${card##*/}.log" 2>&1 || :
+	if grep -Fq 'DEVPATH=/devices/faux/castkms/drm/' \
+		"/run/results/udev-${card##*/}.log"; then
+		castkms_card=$card
+		break
+	fi
+done
+test -n "$castkms_card"
+test -e /dev/dri/renderD128
+test -e /dev/dma_heap/system
+printf 'CastKMS card: %s\n' "$castkms_card"
+
+export CASTKMS_RENDERER_CARD=$castkms_card
+export CASTKMS_RENDER_NODE=/dev/dri/renderD128
+export VK_DRIVER_FILES=/usr/share/vulkan/icd.d/virtio_icd.x86_64.json
+export MUTTER_DEBUG_MULTI_GPU_FORCE_COPY_MODE=${PRONK_VM_COPY_MODE:-primary-gpu-cpu}
+export MUTTER_DEBUG_DISABLE_ANIMATIONS=1
+export MUTTER_DEBUG_FORCE_KMS_MODE=atomic
+export MUTTER_DEBUG_KMS_THREAD_TYPE=user
+export MUTTER_DEBUG_USE_KMS_MODIFIERS=1
+export MUTTER_DEBUG=kms
+export GSETTINGS_SCHEMA_DIR=/usr/share/glib-2.0/schemas
+export LD_LIBRARY_PATH=/usr/lib64/mutter-51
+export META_DBUS_RUNNER_DISABLE_LOGIND_PASSTHROUGH=1
+unset GALLIUM_DRIVER MESA_LOADER_DRIVER_OVERRIDE VN_PERF ZINK_DEBUG
+unset LIBGL_ALWAYS_SOFTWARE MUTTER_DEBUG_USE_FBOS
+unset DBUS_SESSION_BUS_ADDRESS DBUS_SYSTEM_BUS_ADDRESS
+
+RUST_LOG=debug /usr/libexec/castkms/castkms-rendererd \
+	> /run/results/renderer.log 2>&1 &
+renderer_pid=$!
+trap 'kill "$renderer_pid" 2>/dev/null || :; wait "$renderer_pid" 2>/dev/null || :' EXIT
+
+cd /run/mutter-source
+export G_TEST_SRCDIR=$PWD/src/tests
+export G_TEST_BUILDDIR=/run/mutter-build/src/tests
+if python3 src/tests/meta-dbus-runner.py -- \
+	sh /run/test/session "$castkms_card" "$crtc_id" "$connector_id" \
+	"$width" "$height"; then
+	result=0
+else
+	result=$?
+fi
+dmesg > /run/results/kernel.log
+exit "$result"

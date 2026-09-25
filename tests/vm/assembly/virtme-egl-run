@@ -1,0 +1,17 @@
+#!/usr/bin/env python3
+"""Run virtme-ng without its implicit display device."""
+
+from virtme import architectures, virtmods
+from virtme.commands.run import main
+
+
+def no_default_display():
+    return []
+
+
+architectures.Arch.qemu_display_args = staticmethod(no_default_display)
+architectures.Arch_microvm.qemu_display_args = staticmethod(no_default_display)
+virtmods.MODALIASES.append("virtio:d00000010v*")
+virtmods.MODALIASES.append("virtio:d00000001v*")
+
+raise SystemExit(main())

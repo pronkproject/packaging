@@ -1,0 +1,131 @@
+#!/usr/bin/env bash
+# SPDX-License-Identifier: GPL-2.0-or-later
+
+set -euo pipefail
+
+script_dir=$(CDPATH='' cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd -P)
+packaging_root=$(CDPATH='' cd -- "$script_dir/../../.." && pwd -P)
+kernel_image=${PRONK_VM_KERNEL_IMAGE:?set PRONK_VM_KERNEL_IMAGE to a CastKMS bzImage}
+kernel_build=${PRONK_VM_KERNEL_BUILD:-${kernel_image%/arch/x86/boot/bzImage}}
+mutter_build=${PRONK_VM_MUTTER_BUILD:?set PRONK_VM_MUTTER_BUILD to the Mutter build directory}
+stage=${PRONK_VM_STAGE:-${PRONK_SYSEXT_STATE_DIR:-${XDG_STATE_HOME:-$HOME/.local/state}/pronk-sysext}/staged}
+results=${PRONK_VM_RESULTS:-${XDG_STATE_HOME:-$HOME/.local/state}/pronk-vm-results}
+crtc_id=${PRONK_VM_CRTC_ID:?set PRONK_VM_CRTC_ID to a CastKMS CRTC ID}
+connector_id=${PRONK_VM_CONNECTOR_ID:?set PRONK_VM_CONNECTOR_ID to a CastKMS connector ID}
+width=${PRONK_VM_WIDTH:-1920}
+height=${PRONK_VM_HEIGHT:-1080}
+receiver=${PRONK_VM_RECEIVER:-}
+allow_kernel_release_mismatch=${PRONK_VM_ALLOW_KERNEL_RELEASE_MISMATCH:-0}
+copy_mode=${PRONK_VM_COPY_MODE:-primary-gpu-cpu}
+gpu_device=${PRONK_VM_GPU_DEVICE:-virtio-gpu-gl-pci,blob=true,venus=true,hostmem=512M}
+pronk_source=$packaging_root/sources/pronk
+mutter_source=$packaging_root/sources/mutter
+test_binary=$pronk_source/target/debug/pronk-capture-mutter-media-live-test
+log=$results/assembly.log
+
+for value in "$crtc_id" "$connector_id" "$width" "$height"; do
+	[[ $value =~ ^[1-9][0-9]*$ ]] || {
+		printf 'CRTC, connector, width and height must be positive integers\n' >&2
+		exit 2
+	}
+done
+case $copy_mode in
+primary-gpu-cpu|primary-gpu-gpu|zero-copy) ;;
+*) printf 'unsupported copy mode: %s\n' "$copy_mode" >&2; exit 2 ;;
+esac
+[[ $allow_kernel_release_mismatch == 0 || $allow_kernel_release_mismatch == 1 ]] || {
+	printf 'PRONK_VM_ALLOW_KERNEL_RELEASE_MISMATCH must be 0 or 1\n' >&2
+	exit 2
+}
+[[ -z $receiver || $receiver =~ ^[A-Za-z0-9.:-]+$ ]] || {
+	printf 'receiver must be a host:port without shell metacharacters\n' >&2
+	exit 2
+}
+[[ -f $kernel_image && -d $kernel_build && -d $mutter_build && -x $test_binary ]] || {
+	printf 'kernel image/build, Mutter build, or Pronk live-test binary is missing\n' >&2
+	exit 2
+}
+[[ -f $stage/usr/lib/pronk-sysext/manifest ]] || {
+	printf 'staged system extension is missing: %s\n' "$stage" >&2
+	exit 2
+}
+for source in castkms pronk mutter; do
+	case $source in
+	castkms) manifest_key=CASTKMS_REVISION ;;
+	pronk) manifest_key=PRONK_REVISION ;;
+	mutter) manifest_key=MUTTER_REVISION ;;
+	esac
+	[[ $source == mutter ]] && source_path=$mutter_source || \
+		source_path=$packaging_root/sources/$source
+	revision=$(git -C "$source_path" rev-parse --short=12 HEAD)
+	grep -Fqx "$manifest_key=$revision" \
+		"$stage/usr/lib/pronk-sysext/manifest" || {
+		printf 'staged %s revision does not match %s\n' \
+			"$source" "$source_path" >&2
+		exit 2
+	}
+done
+[[ -f $mutter_source/src/tests/meta-dbus-runner.py ]] || {
+	printf 'Mutter session test runner is missing\n' >&2
+	exit 2
+}
+command -v qemu-system-x86_64 >/dev/null
+command -v virtme-run >/dev/null
+if pgrep -f '^/usr/bin/qemu-system-|^qemu-system-' >/dev/null; then
+	printf 'another QEMU VM is active\n' >&2
+	exit 1
+fi
+mkdir -p "$results"
+
+# This is a host virglrenderer setting, not a guest or CastKMS setting.
+# Explicit 0 remains available for a negative-control run.
+export VIRGL_GBM_LAYOUT_ENABLE=${VIRGL_GBM_LAYOUT_ENABLE:-1}
+[[ $VIRGL_GBM_LAYOUT_ENABLE == 0 || $VIRGL_GBM_LAYOUT_ENABLE == 1 ]] || {
+	printf 'VIRGL_GBM_LAYOUT_ENABLE must be 0 or 1\n' >&2
+	exit 2
+}
+guest_command=$(printf 'PRONK_VM_COPY_MODE=%q PRONK_VM_RECEIVER=%q PRONK_VM_ALLOW_KERNEL_RELEASE_MISMATCH=%q sh /run/test/guest %q %q %q %q' \
+	"$copy_mode" "$receiver" "$allow_kernel_release_mismatch" \
+	"$crtc_id" "$connector_id" "$width" "$height")
+
+printf 'Host virgl GBM layout: %s\n' "$VIRGL_GBM_LAYOUT_ENABLE"
+printf 'VM log: %s\n' "$log"
+: >"$log"
+set +e
+nice -n 15 timeout 180s "$script_dir/virtme-egl-run" \
+	--force-9p --disable-microvm --mods auto --show-boot-console \
+	--kimg "$kernel_image" --memory 2G --cpus 4 --net user \
+	--rwdir="/run/results=$results" \
+	--rodir="/run/kernel-build=$kernel_build" \
+	--rodir="/run/extension=$stage" \
+	--rodir="/run/mutter-source=$mutter_source" \
+	--rodir="/run/mutter-build=$mutter_build" \
+	--rodir="/run/pronk-source=$pronk_source" \
+	--rodir="/run/test=$script_dir" \
+	-a kunit.enable=0 -a vkms.create_default_dev=0 \
+	-q=-device -q="$gpu_device" \
+	-q=-display -q=egl-headless,gl=on \
+	--script-sh "$guest_command" >>"$log" 2>&1
+status=$?
+set -e
+printf '\nHost virgl GBM layout: %s\nMutter copy mode: %s\nReceiver: %s\n' \
+	"$VIRGL_GBM_LAYOUT_ENABLE" "$copy_mode" "${receiver:-none}" >>"$log"
+if ((status != 0)); then
+	tail -100 "$log" >&2
+	exit "$status"
+fi
+grep -Fq 'PASS: live Mutter scene through broker' "$log" || {
+	tail -100 "$log" >&2
+	exit 1
+}
+if [[ -n $receiver ]]; then
+	grep -Fq 'PASS: receiver acknowledged the captured stream' "$log" || {
+		tail -100 "$log" >&2
+		exit 1
+	}
+fi
+if grep -Eq 'BUG:|Oops|Call Trace:|WARNING:' "$log"; then
+	printf 'guest kernel reported a failure; inspect %s\n' "$log" >&2
+	exit 1
+fi
+printf 'PASS: VM assembly produced changing decoded frames\n'
