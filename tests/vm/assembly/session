@@ -94,12 +94,21 @@ until timeout 1 pw-dump -r pipewire-0-manager 2>/dev/null | jq -e \
 done
 
 printf 'Assembly logs: %s\n' "$test_root"
-set -- /run/pronk-source/target/debug/pronk-capture-mutter-media-live-test \
-	"$card" "$crtc_id" "$connector_id" "$width" "$height" \
-	"$runtime/pipewire-0-pronk-backend"
-if test -n "${PRONK_VM_RECEIVER:-}"; then
-	set -- "$@" --receiver "$PRONK_VM_RECEIVER"
-fi
+case ${PRONK_VM_TEST:-media} in
+media)
+    set -- "$PRONK_VM_TEST_DIR/pronk-capture-mutter-media-live-test" \
+        "$card" "$crtc_id" "$connector_id" "$width" "$height" \
+        "$runtime/pipewire-0-pronk-backend"
+    if test -n "${PRONK_VM_RECEIVER:-}"; then
+        set -- "$@" --receiver "$PRONK_VM_RECEIVER"
+    fi
+    ;;
+gpu-capture)
+    set -- "$PRONK_VM_TEST_DIR/pronk-capture-mutter-gpu-live-test" \
+        "$card" "$crtc_id" "$connector_id" "$width" "$height"
+    ;;
+*) exit 2 ;;
+esac
 if RUST_LOG=debug RUST_BACKTRACE=1 \
 	timeout --signal=TERM --kill-after=5 90 "$@" \
 	>"$test_root/client.log" 2>&1; then

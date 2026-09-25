@@ -9,7 +9,16 @@ connector_id=$2
 width=$3
 height=$4
 test -f /run/extension/usr/lib/pronk-sysext/manifest
-test -x /run/pronk-source/target/debug/pronk-capture-mutter-media-live-test
+test_dir=/run/pronk-source/target/debug
+if test "${PRONK_VM_USE_PRONK_BIN:-0}" = 1; then
+	test_dir=/run/pronk-bin
+fi
+case ${PRONK_VM_TEST:-media} in
+media) test -x "$test_dir/pronk-capture-mutter-media-live-test" ;;
+gpu-capture) test -x "$test_dir/pronk-capture-mutter-gpu-live-test" ;;
+*) exit 2 ;;
+esac
+export PRONK_VM_TEST_DIR=$test_dir
 
 if test -f /run/kernel-build/fs/overlayfs/overlay.ko; then
 	insmod /run/kernel-build/fs/overlayfs/overlay.ko
@@ -57,12 +66,24 @@ export MUTTER_DEBUG_USE_KMS_MODIFIERS=1
 export MUTTER_DEBUG=kms
 export GSETTINGS_SCHEMA_DIR=/usr/share/glib-2.0/schemas
 export LD_LIBRARY_PATH=/usr/lib64/mutter-51
+if test "${PRONK_VM_USE_MUTTER_BUILD:-0}" = 1; then
+	test -f /run/mutter-build/src/libmutter-51.so.0.0.0
+	export LD_LIBRARY_PATH=/run/mutter-build/src:/run/mutter-build/clutter/clutter:/run/mutter-build/cogl/cogl:/run/mutter-build/mtk/mtk:$LD_LIBRARY_PATH
+	printf 'Using Mutter library from /run/mutter-build/src\n'
+fi
 export META_DBUS_RUNNER_DISABLE_LOGIND_PASSTHROUGH=1
 unset GALLIUM_DRIVER MESA_LOADER_DRIVER_OVERRIDE VN_PERF ZINK_DEBUG
 unset LIBGL_ALWAYS_SOFTWARE MUTTER_DEBUG_USE_FBOS
+if test "${PRONK_VM_USE_FBOS:-auto}" != auto; then
+	export MUTTER_DEBUG_USE_FBOS=$PRONK_VM_USE_FBOS
+fi
 unset DBUS_SESSION_BUS_ADDRESS DBUS_SYSTEM_BUS_ADDRESS
 
-RUST_LOG=debug /usr/libexec/castkms/castkms-rendererd \
+renderer=/usr/libexec/castkms/castkms-rendererd
+if test -x /run/renderer-build/castkms-rendererd; then
+	renderer=/run/renderer-build/castkms-rendererd
+fi
+RUST_LOG=debug "$renderer" \
 	> /run/results/renderer.log 2>&1 &
 renderer_pid=$!
 trap 'kill "$renderer_pid" 2>/dev/null || :; wait "$renderer_pid" 2>/dev/null || :' EXIT

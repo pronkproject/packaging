@@ -24,6 +24,21 @@ that negative control. The log is `gl-venus.log` below `PRONK_VM_RESULTS`.
 Passing this check proves pixel transfer for a virtio-owned allocation. It
 does not prove that GLES can render to a foreign CastKMS or system-heap
 allocation, nor that Mutter selects the working path for its output.
+Set `PRONK_VM_TEST_WIDTH` and `PRONK_VM_TEST_HEIGHT` to exercise the same
+pixel path at a larger image size; both default to 64.
+Set `PRONK_VM_TEST_AR30=1` to check the stride and modifier of a separate
+ARGB2101010 render allocation, including an explicit-linear allocation, at
+that size before the pixel-transfer test.
+Set `PRONK_VM_TEST_XR24=1` to exercise an opaque XRGB8888 surface, and
+`PRONK_VM_TEST_GLES3=1` to use a GLES3 context. An XRGB buffer's unused alpha
+byte is not part of the pixel assertion.
+`PRONK_VM_TEST_SECOND_SURFACE=1` first renders to another 1280×800 GBM/EGL
+window surface using the same context, then returns to the tested surface.
+`PRONK_VM_TEST_NO_CONFIG_CONTEXT=1` uses `EGL_KHR_no_config_context`, and
+`PRONK_VM_TEST_EXPLICIT_LINEAR=1` creates both surfaces with an explicit
+linear modifier; these isolate two more parts of Mutter's EGL/GBM setup.
+`PRONK_VM_TEST_SWAPS` repeats render-and-swap before importing the last GBM
+front buffer (1 by default, at most 8).
 
 Build the kernel and userspace stage first. The kernel image must correspond
 to the release recorded in the stage manifest. Build the Pronk
@@ -32,6 +47,24 @@ to the release recorded in the stage manifest. Build the Pronk
 provide a Mutter build directory for its session test runner. The launcher
 checks the staged CastKMS, Pronk, and Mutter revisions against the source
 submodules. It uses the installed `virtme-run`, QEMU, and host EGL stack.
+
+For a GPU-only capture check, also build
+`pronk-capture-mutter-gpu-live-test` and set `PRONK_VM_TEST=gpu-capture` with
+`PRONK_VM_COPY_MODE=zero-copy`. This test allocates one Vulkan-owned
+destination, registers it with capture, and checks that three requests
+complete with advancing timestamps. A test-only Vulkan readback then checks
+the center pixel for nonblack content and a changing shade; the production
+capture path does not map pixels on the CPU. The probe does not encode video
+or contact a receiver. Run `run-gl-venus` separately to check a
+GLES-produced buffer's pixels after Venus import.
+
+`PRONK_VM_COPY_MODE=primary-gpu-gpu` is also accepted by the GPU capture
+probe to isolate Mutter's GPU copy from its direct import path.
+
+If the staged Pronk source does not contain the probe, set
+`PRONK_VM_PRONK_BIN_DIR` to the directory containing a separately built probe
+and matching `pronk-capture-pattern-client`. The installed service and staged
+source revisions remain unchanged; the override affects test executables only.
 
 The CRTC and connector IDs are explicit because they belong to the booted
 CastKMS instance, not to the packaging source tree. For a previously inspected
@@ -52,6 +85,18 @@ where the logs remain. `PRONK_VM_WIDTH` and `PRONK_VM_HEIGHT` default to
 1920×1080. `PRONK_VM_COPY_MODE` accepts `primary-gpu-cpu` (default),
 `primary-gpu-gpu`, or `zero-copy`. The copy-mode setting is diagnostic: a
 successful local test does not by itself prove that GPU composition was used.
+Set `PRONK_VM_USE_MUTTER_BUILD=1` to load `libmutter-51.so` from the specified
+`PRONK_VM_MUTTER_BUILD` inside the guest while leaving the staged extension
+unchanged. This tests local Mutter changes against the packaged assembly; it
+does not qualify the pinned staged revision.
+`PRONK_VM_USE_FBOS=0` or `1` overrides Mutter's FBO choice for diagnosis;
+the default `auto` tests Mutter's own policy.
+`PRONK_VM_PATTERN=shm` uses a direct Wayland shared-memory client to isolate
+Mutter's texture upload and rendering from GTK; it requires `gpu-capture`.
+`PRONK_VM_DISABLE_VIRTIO_OUTPUT=1` disconnects the guest's virtio display
+while retaining virtio GPU rendering.
+Set `PRONK_VM_DRM_DEBUG=0x1ff` when diagnosing a kernel DRM rejection; the
+default mask is `0`, and the guest's `dmesg` is saved as `kernel.log`.
 The guest requires the kernel release in the stage manifest to match its
 running kernel. Set `PRONK_VM_ALLOW_KERNEL_RELEASE_MISMATCH=1` only for a
 deliberate local build from the same kernel sources with a different release
