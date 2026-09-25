@@ -1,1 +1,1 @@
-SUBSYSTEM=="drm", KERNEL=="card0", TAG+="mutter-device-preferred-primary"
+SUBSYSTEM=="drm", KERNEL=="card[0-9]*", SUBSYSTEMS=="pci", TAG+="mutter-device-preferred-primary"
