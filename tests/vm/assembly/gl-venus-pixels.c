@@ -14,8 +14,6 @@
 #include <unistd.h>
 #include <vulkan/vulkan.h>
 
-#define WIDTH 64
-#define HEIGHT 64
 #define CHECK(condition, message) do { \
 	if (!(condition)) { fprintf(stderr, "FAIL: %s\n", message); return 1; } \
 } while (0)
@@ -39,34 +37,141 @@ static int memory_type(VkPhysicalDeviceMemoryProperties properties,
 
 int main(int argc, char **argv)
 {
+	int width = 64;
+	int height = 64;
+	int use_xr24;
+	int use_gles3;
+	int use_second_surface;
+	int use_no_config_context;
+	int use_explicit_linear;
+	int swaps = 1;
+
 	setvbuf(stdout, NULL, _IONBF, 0);
-	CHECK(argc == 2, "usage: gl-venus-pixels RENDER_NODE");
+	CHECK(argc == 2 || argc == 4 || argc == 5 || argc == 6 || argc == 7 ||
+	      argc == 8 || argc == 9 || argc == 10 || argc == 11,
+	      "usage: gl-venus-pixels RENDER_NODE [WIDTH HEIGHT [PROBE_AR30 [USE_XR24 [USE_GLES3 [SECOND_SURFACE [NO_CONFIG_CONTEXT [EXPLICIT_LINEAR [SWAPS]]]]]]]]");
+	if (argc >= 4) {
+		width = atoi(argv[2]);
+		height = atoi(argv[3]);
+		CHECK(width >= 16 && height >= 16 && width <= 8192 && height <= 8192,
+		      "image dimensions must be 16..8192");
+	}
+	CHECK(argc < 5 || strcmp(argv[4], "0") == 0 ||
+	      strcmp(argv[4], "1") == 0, "PROBE_AR30 must be 0 or 1");
+	CHECK(argc < 6 || strcmp(argv[5], "0") == 0 ||
+	      strcmp(argv[5], "1") == 0, "USE_XR24 must be 0 or 1");
+	CHECK(argc < 7 || strcmp(argv[6], "0") == 0 ||
+	      strcmp(argv[6], "1") == 0, "USE_GLES3 must be 0 or 1");
+	CHECK(argc < 8 || strcmp(argv[7], "0") == 0 ||
+	      strcmp(argv[7], "1") == 0, "SECOND_SURFACE must be 0 or 1");
+	CHECK(argc < 9 || strcmp(argv[8], "0") == 0 ||
+	      strcmp(argv[8], "1") == 0, "NO_CONFIG_CONTEXT must be 0 or 1");
+	CHECK(argc < 10 || strcmp(argv[9], "0") == 0 ||
+	      strcmp(argv[9], "1") == 0, "EXPLICIT_LINEAR must be 0 or 1");
+	if (argc == 11) {
+		swaps = atoi(argv[10]);
+		CHECK(swaps >= 1 && swaps <= 8, "SWAPS must be 1..8");
+	}
+	use_xr24 = argc >= 6 && strcmp(argv[5], "1") == 0;
+	use_gles3 = argc >= 7 && strcmp(argv[6], "1") == 0;
+	use_second_surface = argc >= 8 && strcmp(argv[7], "1") == 0;
+	use_no_config_context = argc >= 9 && strcmp(argv[8], "1") == 0;
+	use_explicit_linear = argc >= 10 && strcmp(argv[9], "1") == 0;
 	int render_fd = open(argv[1], O_RDWR | O_CLOEXEC);
 	CHECK(render_fd >= 0, "open render node");
 	struct gbm_device *gbm = gbm_create_device(render_fd);
 	CHECK(gbm, "create GBM device");
+	if (argc == 5 && strcmp(argv[4], "1") == 0) {
+		struct gbm_bo *xr30 = gbm_bo_create(gbm, 1280, 800,
+			GBM_FORMAT_XRGB2101010,
+			GBM_BO_USE_RENDERING | GBM_BO_USE_SCANOUT);
+		CHECK(xr30, "allocate XR30 GBM render buffer");
+		printf("XR30 GBM buffer: %ux%u stride %u\n",
+		       gbm_bo_get_width(xr30), gbm_bo_get_height(xr30),
+		       gbm_bo_get_stride(xr30));
+		struct gbm_bo *ar30 = gbm_bo_create(gbm, width, height,
+			GBM_FORMAT_ARGB2101010,
+			GBM_BO_USE_RENDERING | GBM_BO_USE_LINEAR);
+		CHECK(ar30, "allocate AR30 GBM render buffer");
+		printf("AR30 GBM buffer: %ux%u stride %u plane stride %u "
+		       "modifier 0x%016llx\n",
+		       gbm_bo_get_width(ar30), gbm_bo_get_height(ar30),
+		       gbm_bo_get_stride(ar30), gbm_bo_get_stride_for_plane(ar30, 0),
+		       (unsigned long long)gbm_bo_get_modifier(ar30));
+		CHECK(gbm_bo_get_width(ar30) == (uint32_t)width &&
+		      gbm_bo_get_height(ar30) == (uint32_t)height &&
+		      gbm_bo_get_stride(ar30) >= (uint32_t)width * 4 &&
+		      gbm_bo_get_stride_for_plane(ar30, 0) >= (uint32_t)width * 4,
+		      "AR30 GBM buffer pitch covers the requested width");
+		uint64_t linear_modifier = 0;
+		struct gbm_bo *explicit_ar30 = gbm_bo_create_with_modifiers2(gbm,
+			width, height, GBM_FORMAT_ARGB2101010, &linear_modifier, 1,
+			GBM_BO_USE_RENDERING);
+		CHECK(explicit_ar30, "allocate explicit-linear AR30 GBM render buffer");
+		printf("Explicit-linear AR30 GBM buffer: %ux%u stride %u plane stride %u\n",
+		       gbm_bo_get_width(explicit_ar30), gbm_bo_get_height(explicit_ar30),
+		       gbm_bo_get_stride(explicit_ar30),
+		       gbm_bo_get_stride_for_plane(explicit_ar30, 0));
+		CHECK(gbm_bo_get_width(explicit_ar30) == (uint32_t)width &&
+		      gbm_bo_get_height(explicit_ar30) == (uint32_t)height &&
+		      gbm_bo_get_stride_for_plane(explicit_ar30, 0) >= (uint32_t)width * 4,
+		      "explicit-linear AR30 pitch covers the requested width");
+		gbm_bo_destroy(explicit_ar30);
+		gbm_bo_destroy(ar30);
+		gbm_bo_destroy(xr30);
+	}
 	EGLDisplay display = eglGetPlatformDisplay(EGL_PLATFORM_GBM_KHR, gbm, NULL);
 	CHECK(display != EGL_NO_DISPLAY && eglInitialize(display, NULL, NULL),
 	      "initialize EGL on virtio GPU");
 	EGLint count;
 	EGLConfig config;
-	const EGLint config_attrs[] = {
+	EGLConfig configs[128];
+	EGLint config_attrs[] = {
 		EGL_SURFACE_TYPE, EGL_WINDOW_BIT,
-		EGL_RENDERABLE_TYPE, EGL_OPENGL_ES2_BIT,
+		EGL_RENDERABLE_TYPE, use_gles3 ? EGL_OPENGL_ES3_BIT_KHR : EGL_OPENGL_ES2_BIT,
 		EGL_RED_SIZE, 8, EGL_GREEN_SIZE, 8,
 		EGL_BLUE_SIZE, 8, EGL_ALPHA_SIZE, 8, EGL_NONE,
 	};
-	CHECK(eglChooseConfig(display, config_attrs, &config, 1, &count) && count,
+	if (use_xr24)
+		config_attrs[11] = 0;
+	CHECK(eglChooseConfig(display, config_attrs, configs, 128, &count) && count,
 	      "choose EGL window config");
+	config = configs[0];
+	if (use_xr24) {
+		int found = 0;
+		for (EGLint i = 0; i < count && i < 128; i++) {
+			EGLint visual = 0;
+			if (eglGetConfigAttrib(display, configs[i], EGL_NATIVE_VISUAL_ID,
+					       &visual) && visual == GBM_FORMAT_XRGB8888) {
+				config = configs[i];
+				found = 1;
+				break;
+			}
+		}
+		CHECK(found, "find XRGB8888 EGL config");
+	}
 	CHECK(eglBindAPI(EGL_OPENGL_ES_API), "bind GLES API");
-	struct gbm_surface *surface = gbm_surface_create(gbm, WIDTH, HEIGHT,
-		GBM_FORMAT_ARGB8888, GBM_BO_USE_RENDERING | GBM_BO_USE_SCANOUT);
+	uint32_t gbm_format = use_xr24 ? GBM_FORMAT_XRGB8888 : GBM_FORMAT_ARGB8888;
+	uint64_t linear_modifier = 0;
+	struct gbm_surface *surface = use_explicit_linear ?
+		gbm_surface_create_with_modifiers(gbm, width, height, gbm_format,
+			&linear_modifier, 1) :
+		gbm_surface_create(gbm, width, height, gbm_format,
+			GBM_BO_USE_RENDERING | GBM_BO_USE_SCANOUT | GBM_BO_USE_LINEAR);
 	CHECK(surface, "create GBM surface");
 	EGLSurface window = eglCreateWindowSurface(display, config,
 		(EGLNativeWindowType)surface, NULL);
 	CHECK(window != EGL_NO_SURFACE, "create EGL window");
-	const EGLint context_attrs[] = { EGL_CONTEXT_CLIENT_VERSION, 2, EGL_NONE };
-	EGLContext context = eglCreateContext(display, config, EGL_NO_CONTEXT,
+	const EGLint context_attrs[] = {
+		EGL_CONTEXT_CLIENT_VERSION, use_gles3 ? 3 : 2, EGL_NONE
+	};
+	if (use_no_config_context) {
+		const char *extensions = eglQueryString(display, EGL_EXTENSIONS);
+		CHECK(extensions && strstr(extensions, "EGL_KHR_no_config_context"),
+		      "EGL no-config context extension is unavailable");
+	}
+	EGLContext context = eglCreateContext(display,
+		use_no_config_context ? EGL_NO_CONFIG_KHR : config, EGL_NO_CONTEXT,
 		context_attrs);
 	CHECK(context != EGL_NO_CONTEXT &&
 	      eglMakeCurrent(display, window, window, context), "create GLES context");
@@ -74,27 +179,63 @@ int main(int argc, char **argv)
 	CHECK(gl_renderer && strstr(gl_renderer, "virgl"),
 	      "GLES did not select virgl");
 	printf("GLES renderer: %s\n", gl_renderer);
-	glClearColor(1.0f, 0.0f, 0.0f, 1.0f);
-	glClear(GL_COLOR_BUFFER_BIT);
-	glEnable(GL_SCISSOR_TEST);
-	glScissor(0, 0, WIDTH / 2, HEIGHT / 2);
-	glClearColor(0.0f, 1.0f, 0.0f, 1.0f);
-	glClear(GL_COLOR_BUFFER_BIT);
-	glDisable(GL_SCISSOR_TEST);
-	glFinish();
-	CHECK(glGetError() == GL_NO_ERROR, "clear two colors in GLES");
-	CHECK(eglSwapBuffers(display, window), "publish GBM front buffer");
+	struct gbm_surface *second_surface = NULL;
+	EGLSurface second_window = EGL_NO_SURFACE;
+	if (use_second_surface) {
+		second_surface = use_explicit_linear ?
+			gbm_surface_create_with_modifiers(gbm, 1280, 800,
+				gbm_format, &linear_modifier, 1) :
+			gbm_surface_create(gbm, 1280, 800, gbm_format,
+				GBM_BO_USE_RENDERING | GBM_BO_USE_SCANOUT | GBM_BO_USE_LINEAR);
+		CHECK(second_surface, "create second GBM surface");
+		second_window = eglCreateWindowSurface(display, config,
+			(EGLNativeWindowType)second_surface, NULL);
+		CHECK(second_window != EGL_NO_SURFACE &&
+		      eglMakeCurrent(display, second_window, second_window, context),
+		      "bind second EGL surface");
+		glClearColor(0.0f, 0.0f, 1.0f, 1.0f);
+		glClear(GL_COLOR_BUFFER_BIT);
+		CHECK(glGetError() == GL_NO_ERROR &&
+		      eglSwapBuffers(display, second_window),
+		      "render to second EGL surface");
+		CHECK(eglMakeCurrent(display, window, window, context),
+		      "restore first EGL surface");
+	}
+	for (int frame = 0; frame < swaps; frame++) {
+		glClearColor(1.0f, 0.0f, 0.0f, 1.0f);
+		glClear(GL_COLOR_BUFFER_BIT);
+		glEnable(GL_SCISSOR_TEST);
+		glScissor(0, 0, width / 2, height / 2);
+		glClearColor(0.0f, 1.0f, 0.0f, 1.0f);
+		glClear(GL_COLOR_BUFFER_BIT);
+		glDisable(GL_SCISSOR_TEST);
+		glFinish();
+		CHECK(glGetError() == GL_NO_ERROR, "clear two colors in GLES");
+		CHECK(eglSwapBuffers(display, window), "publish GBM front buffer");
+		if (frame + 1 < swaps) {
+			struct gbm_bo *previous = gbm_surface_lock_front_buffer(surface);
+			CHECK(previous, "lock earlier GBM front buffer");
+			gbm_surface_release_buffer(surface, previous);
+		}
+	}
 	struct gbm_bo *front = gbm_surface_lock_front_buffer(surface);
 	CHECK(front, "lock GL-rendered GBM buffer");
 	uint64_t modifier = gbm_bo_get_modifier(front);
 	uint32_t stride = gbm_bo_get_stride(front);
+	printf("GBM dimensions: %ux%u\n", gbm_bo_get_width(front),
+	       gbm_bo_get_height(front));
+	CHECK(gbm_bo_get_width(front) == (uint32_t)width &&
+	      gbm_bo_get_height(front) == (uint32_t)height,
+	      "GBM front buffer dimensions match surface");
+	CHECK(stride >= (uint32_t)width * 4,
+	      "GBM front buffer pitch covers the requested width");
 	int dma_fd = gbm_bo_get_fd(front);
 	CHECK(dma_fd >= 0, "export GL-rendered DMA-BUF");
 	struct stat stat;
 	CHECK(fstat(dma_fd, &stat) == 0, "stat DMA-BUF");
 	printf("GBM modifier: 0x%016llx, stride: %u, size: %lld\n",
 	       (unsigned long long)modifier, stride, (long long)stat.st_size);
-	CHECK(stat.st_size >= (off_t)(stride * HEIGHT), "DMA-BUF holds image rows");
+	CHECK(stat.st_size >= (off_t)(stride * height), "DMA-BUF holds image rows");
 
 	VkApplicationInfo application = {
 		.sType = VK_STRUCTURE_TYPE_APPLICATION_INFO,
@@ -168,7 +309,7 @@ int main(int argc, char **argv)
 		.pNext = &external,
 		.imageType = VK_IMAGE_TYPE_2D,
 		.format = VK_FORMAT_B8G8R8A8_UNORM,
-		.extent = { WIDTH, HEIGHT, 1 },
+		.extent = { width, height, 1 },
 		.mipLevels = 1,
 		.arrayLayers = 1,
 		.samples = VK_SAMPLE_COUNT_1_BIT,
@@ -225,7 +366,7 @@ int main(int argc, char **argv)
 
 	VkBufferCreateInfo buffer_info = {
 		.sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO,
-		.size = WIDTH * HEIGHT * 4,
+		.size = (VkDeviceSize)width * height * 4,
 		.usage = VK_BUFFER_USAGE_TRANSFER_DST_BIT,
 		.sharingMode = VK_SHARING_MODE_EXCLUSIVE,
 	};
@@ -285,7 +426,7 @@ int main(int argc, char **argv)
 			.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT,
 			.layerCount = 1,
 		},
-		.imageExtent = { WIDTH, HEIGHT, 1 },
+		.imageExtent = { width, height, 1 },
 	};
 	vkCmdCopyImageToBuffer(command, image, VK_IMAGE_LAYOUT_GENERAL, buffer,
 		1, &region);
@@ -312,17 +453,21 @@ int main(int argc, char **argv)
 	VK_CHECK(vkMapMemory(device, buffer_memory, 0, buffer_info.size, 0,
 			    &pixels));
 	int red = 0, green = 0;
-	for (int y = 8; y < HEIGHT; y += HEIGHT / 2) {
-		for (int x = 8; x < WIDTH; x += WIDTH / 2) {
+	for (int row = 0; row < 2; row++) {
+		int y = row ? 3 * height / 4 : height / 4;
+		for (int column = 0; column < 2; column++) {
+			int x = column ? 3 * width / 4 : width / 4;
 			const uint8_t *sample = (const uint8_t *)pixels +
-				(y * WIDTH + x) * 4;
+				((size_t)y * width + x) * 4;
 			printf("Vulkan pixel (%d,%d) BGRA: %02x %02x %02x %02x\n",
 			       x, y, sample[0], sample[1], sample[2], sample[3]);
 			if (sample[0] == 0 && sample[1] == 0 &&
-			    sample[2] == 255 && sample[3] == 255)
+			    sample[2] == 255 &&
+			    (use_xr24 || sample[3] == 255))
 				red++;
 			if (sample[0] == 0 && sample[1] == 255 &&
-			    sample[2] == 0 && sample[3] == 255)
+			    sample[2] == 0 &&
+			    (use_xr24 || sample[3] == 255))
 				green++;
 		}
 	}
@@ -342,7 +487,11 @@ int main(int argc, char **argv)
 	eglMakeCurrent(display, EGL_NO_SURFACE, EGL_NO_SURFACE, EGL_NO_CONTEXT);
 	eglDestroyContext(display, context);
 	eglDestroySurface(display, window);
+	if (second_window != EGL_NO_SURFACE)
+		eglDestroySurface(display, second_window);
 	gbm_surface_destroy(surface);
+	if (second_surface)
+		gbm_surface_destroy(second_surface);
 	eglTerminate(display);
 	gbm_device_destroy(gbm);
 	close(render_fd);

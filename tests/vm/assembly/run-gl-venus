@@ -7,9 +7,50 @@ script_dir=$(CDPATH='' cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd -P)
 kernel_image=${PRONK_VM_KERNEL_IMAGE:?set PRONK_VM_KERNEL_IMAGE to a CastKMS bzImage}
 results=${PRONK_VM_RESULTS:-${XDG_STATE_HOME:-$HOME/.local/state}/pronk-vm-results}
 gpu_device=${PRONK_VM_GPU_DEVICE:-virtio-gpu-gl-pci,blob=true,venus=true,hostmem=512M}
+width=${PRONK_VM_TEST_WIDTH:-64}
+height=${PRONK_VM_TEST_HEIGHT:-64}
+probe_ar30=${PRONK_VM_TEST_AR30:-0}
+use_xr24=${PRONK_VM_TEST_XR24:-0}
+use_gles3=${PRONK_VM_TEST_GLES3:-0}
+use_second_surface=${PRONK_VM_TEST_SECOND_SURFACE:-0}
+use_no_config_context=${PRONK_VM_TEST_NO_CONFIG_CONTEXT:-0}
+use_explicit_linear=${PRONK_VM_TEST_EXPLICIT_LINEAR:-0}
+swaps=${PRONK_VM_TEST_SWAPS:-1}
 log=$results/gl-venus.log
 
 [[ -f $kernel_image ]] || { printf 'missing kernel image: %s\n' "$kernel_image" >&2; exit 2; }
+[[ $width =~ ^[1-9][0-9]*$ && $height =~ ^[1-9][0-9]*$ ]] || {
+	printf 'PRONK_VM_TEST_WIDTH and PRONK_VM_TEST_HEIGHT must be positive integers\n' >&2
+	exit 2
+}
+[[ $probe_ar30 == 0 || $probe_ar30 == 1 ]] || {
+	printf 'PRONK_VM_TEST_AR30 must be 0 or 1\n' >&2
+	exit 2
+}
+[[ $use_xr24 == 0 || $use_xr24 == 1 ]] || {
+	printf 'PRONK_VM_TEST_XR24 must be 0 or 1\n' >&2
+	exit 2
+}
+[[ $use_gles3 == 0 || $use_gles3 == 1 ]] || {
+	printf 'PRONK_VM_TEST_GLES3 must be 0 or 1\n' >&2
+	exit 2
+}
+[[ $use_second_surface == 0 || $use_second_surface == 1 ]] || {
+	printf 'PRONK_VM_TEST_SECOND_SURFACE must be 0 or 1\n' >&2
+	exit 2
+}
+[[ $use_no_config_context == 0 || $use_no_config_context == 1 ]] || {
+	printf 'PRONK_VM_TEST_NO_CONFIG_CONTEXT must be 0 or 1\n' >&2
+	exit 2
+}
+[[ $use_explicit_linear == 0 || $use_explicit_linear == 1 ]] || {
+	printf 'PRONK_VM_TEST_EXPLICIT_LINEAR must be 0 or 1\n' >&2
+	exit 2
+}
+[[ $swaps =~ ^[1-8]$ ]] || {
+	printf 'PRONK_VM_TEST_SWAPS must be 1..8\n' >&2
+	exit 2
+}
 command -v qemu-system-x86_64 >/dev/null
 command -v virtme-run >/dev/null
 command -v cc >/dev/null
@@ -38,7 +79,7 @@ nice -n 15 timeout 90s "$script_dir/virtme-egl-run" \
 	-a kunit.enable=0 -a vkms.create_default_dev=0 \
 	-q=-device -q="$gpu_device" \
 	-q=-display -q=egl-headless,gl=on \
-	--script-sh 'export VK_DRIVER_FILES=/usr/share/vulkan/icd.d/virtio_icd.x86_64.json; udevadm settle; /run/results/gl-venus-pixels /dev/dri/renderD128' \
+	--script-sh "export VK_DRIVER_FILES=/usr/share/vulkan/icd.d/virtio_icd.x86_64.json; udevadm settle; /run/results/gl-venus-pixels /dev/dri/renderD128 $width $height $probe_ar30 $use_xr24 $use_gles3 $use_second_surface $use_no_config_context $use_explicit_linear $swaps" \
 	>"$log" 2>&1
 status=$?
 set -e
