@@ -152,7 +152,7 @@ int main(int argc, char **argv)
 {
 	struct app app = { 0 };
 	struct wl_registry *registry;
-	int frame = 0;
+	unsigned int frame = 0;
 	if (argc != 3)
 		fail("expected width and height");
 	app.width = atoi(argv[1]);
@@ -184,7 +184,7 @@ int main(int argc, char **argv)
 	create_image(&app, &app.images[1]);
 	for (;;) {
 		struct image *image = &app.images[frame % 2];
-		uint32_t shade = frame % 2 ? 0x68 : 0x49;
+		uint32_t shade = 0x30 + (frame * 31u) % 160;
 		uint32_t pixel = 0xff000000u | (shade << 16) |
 			(shade << 8) | shade;
 		if (wl_display_roundtrip(app.display) < 0)
@@ -199,7 +199,7 @@ int main(int argc, char **argv)
 			wl_surface_commit(app.surface);
 			fprintf(stderr, "Wayland pattern submitted shade %02x\n", shade);
 		}
-		frame++;
+		frame = (frame + 1) % 160;
 		usleep(700000);
 	}
 }
