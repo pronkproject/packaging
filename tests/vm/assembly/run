@@ -23,6 +23,7 @@ test_case=${PRONK_VM_TEST:-media}
 pattern=${PRONK_VM_PATTERN:-gtk}
 renderer_build=${PRONK_VM_RENDERER_BUILD:-}
 pronk_bin_dir=${PRONK_VM_PRONK_BIN_DIR:-}
+mesa_stage=${PRONK_VM_MESA_STAGE:-}
 drm_debug=${PRONK_VM_DRM_DEBUG:-0}
 gpu_device=${PRONK_VM_GPU_DEVICE:-virtio-gpu-gl-pci,blob=true,venus=true,hostmem=512M}
 disable_virtio_output=${PRONK_VM_DISABLE_VIRTIO_OUTPUT:-0}
@@ -84,6 +85,10 @@ if [[ -n $renderer_build && ! -x $renderer_build/castkms-rendererd ]]; then
 fi
 if [[ -n $pronk_bin_dir && ! -x $pronk_bin_dir/pronk-capture-pattern-client ]]; then
 	printf 'Pronk pattern client is missing from the alternate binary directory\n' >&2
+	exit 2
+fi
+if [[ -n $mesa_stage && ! -f $mesa_stage/usr/local/lib64/libgallium-26.2.2.so ]]; then
+	printf 'staged Mesa Gallium library is missing\n' >&2
 	exit 2
 fi
 [[ $drm_debug =~ ^(0x[0-9a-fA-F]+|[0-9]+)$ ]] || {
@@ -150,8 +155,8 @@ export VIRGL_GBM_LAYOUT_ENABLE=${VIRGL_GBM_LAYOUT_ENABLE:-1}
 	printf 'VIRGL_GBM_LAYOUT_ENABLE must be 0 or 1\n' >&2
 	exit 2
 }
-guest_command=$(printf 'PRONK_VM_COPY_MODE=%q PRONK_VM_RECEIVER=%q PRONK_VM_ALLOW_KERNEL_RELEASE_MISMATCH=%q PRONK_VM_USE_MUTTER_BUILD=%q PRONK_VM_USE_FBOS=%q PRONK_VM_TEST=%q PRONK_VM_USE_PRONK_BIN=%q PRONK_PATTERN_BIN=%q sh /run/test/guest %q %q %q %q' \
-    "$copy_mode" "$receiver" "$allow_kernel_release_mismatch" "$use_mutter_build" "$use_fbos" "$test_case" "${pronk_bin_dir:+1}" "$pattern_bin" \
+guest_command=$(printf 'PRONK_VM_COPY_MODE=%q PRONK_VM_RECEIVER=%q PRONK_VM_ALLOW_KERNEL_RELEASE_MISMATCH=%q PRONK_VM_USE_MUTTER_BUILD=%q PRONK_VM_USE_FBOS=%q PRONK_VM_TEST=%q PRONK_VM_USE_PRONK_BIN=%q PRONK_VM_USE_MESA_STAGE=%q PRONK_PATTERN_BIN=%q sh /run/test/guest %q %q %q %q' \
+    "$copy_mode" "$receiver" "$allow_kernel_release_mismatch" "$use_mutter_build" "$use_fbos" "$test_case" "${pronk_bin_dir:+1}" "${mesa_stage:+1}" "$pattern_bin" \
 	"$crtc_id" "$connector_id" "$width" "$height")
 
 printf 'Host virgl GBM layout: %s\n' "$VIRGL_GBM_LAYOUT_ENABLE"
@@ -168,6 +173,10 @@ pronk_bin_mount=()
 if [[ -n $pronk_bin_dir ]]; then
 	pronk_bin_mount+=("--rodir=/run/pronk-bin=$pronk_bin_dir")
 fi
+mesa_mount=()
+if [[ -n $mesa_stage ]]; then
+	mesa_mount+=("--rodir=/run/mesa-stage=$mesa_stage")
+fi
 set +e
 virtio_output_args=()
 if [[ $disable_virtio_output == 1 ]]; then
@@ -183,6 +192,7 @@ nice -n 15 timeout 180s "$script_dir/virtme-egl-run" \
 	--rodir="/run/mutter-build=$mutter_build" \
 	"${renderer_mount[@]}" \
 	"${pronk_bin_mount[@]}" \
+	"${mesa_mount[@]}" \
 	--rodir="/run/pronk-source=$pronk_source" \
 	--rodir="/run/test=$script_dir" \
 	-a kunit.enable=0 -a vkms.create_default_dev=0 -a "drm.debug=$drm_debug" \

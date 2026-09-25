@@ -71,6 +71,12 @@ if test "${PRONK_VM_USE_MUTTER_BUILD:-0}" = 1; then
 	export LD_LIBRARY_PATH=/run/mutter-build/src:/run/mutter-build/clutter/clutter:/run/mutter-build/cogl/cogl:/run/mutter-build/mtk/mtk:$LD_LIBRARY_PATH
 	printf 'Using Mutter library from /run/mutter-build/src\n'
 fi
+if test "${PRONK_VM_USE_MESA_STAGE:-0}" = 1; then
+	test -f /run/mesa-stage/usr/local/lib64/libgallium-26.2.2.so
+	export LD_LIBRARY_PATH=/run/mesa-stage/usr/local/lib64:$LD_LIBRARY_PATH
+	export GBM_BACKENDS_PATH=/run/mesa-stage/usr/local/lib64/gbm
+	printf 'Using Mesa libraries from /run/mesa-stage\n'
+fi
 export META_DBUS_RUNNER_DISABLE_LOGIND_PASSTHROUGH=1
 unset GALLIUM_DRIVER MESA_LOADER_DRIVER_OVERRIDE VN_PERF ZINK_DEBUG
 unset LIBGL_ALWAYS_SOFTWARE MUTTER_DEBUG_USE_FBOS
