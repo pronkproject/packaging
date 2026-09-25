@@ -209,3 +209,12 @@ The hosted compatibility gate performs these inexpensive contract checks and
 regenerates the downstream patch series on every change. Full SRPM, COPR, and
 virtual-machine builds remain release gates because they are substantially
 more resource intensive.
+
+## VM assembly test
+
+The [VM assembly harness](tests/vm/assembly/README.md) boots a disposable
+CastKMS guest with the staged userspace stack and checks changing decoded
+frames through Mutter, Pronk, PipeWire, and H.264. It runs without a receiver
+unless a receiver is explicitly selected. The harness also configures the
+host virgl GBM layout needed for Venus to import eligible shared GL buffers;
+that setting does not qualify foreign-buffer GPU composition by itself.
