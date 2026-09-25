@@ -6,6 +6,25 @@ session. Pronk's live capture probe renders a changing fullscreen pattern and
 checks decoded H.264 pixels. The default test stays local; it does not contact
 a receiver.
 
+Before testing the full assembly, `run-gl-venus` can isolate one graphics
+boundary. It clears a two-color pattern through guest GLES into a virtio-GBM
+buffer, exports that buffer, imports it as a Venus Vulkan image, copies its
+pixels to a Vulkan staging buffer, and checks four samples. It uses the booted
+kernel and host graphics libraries but does not require a staged extension,
+Mutter build, CastKMS monitor IDs, or a receiver:
+
+```sh
+PRONK_VM_KERNEL_IMAGE=/path/to/kernel-build/arch/x86/boot/bzImage \
+tests/vm/assembly/run-gl-venus
+```
+
+The host launcher enables `VIRGL_GBM_LAYOUT_ENABLE=1` by default. Set it to
+`0` to reproduce the missing host-GBM-storage path; a failure is expected for
+that negative control. The log is `gl-venus.log` below `PRONK_VM_RESULTS`.
+Passing this check proves pixel transfer for a virtio-owned allocation. It
+does not prove that GLES can render to a foreign CastKMS or system-heap
+allocation, nor that Mutter selects the working path for its output.
+
 Build the kernel and userspace stage first. The kernel image must correspond
 to the release recorded in the stage manifest. Build the Pronk
 `pronk-capture-mutter-media-live-test` and

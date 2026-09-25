@@ -1,0 +1,54 @@
+#!/usr/bin/env bash
+# SPDX-License-Identifier: GPL-2.0-or-later
+
+set -euo pipefail
+
+script_dir=$(CDPATH='' cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd -P)
+kernel_image=${PRONK_VM_KERNEL_IMAGE:?set PRONK_VM_KERNEL_IMAGE to a CastKMS bzImage}
+results=${PRONK_VM_RESULTS:-${XDG_STATE_HOME:-$HOME/.local/state}/pronk-vm-results}
+gpu_device=${PRONK_VM_GPU_DEVICE:-virtio-gpu-gl-pci,blob=true,venus=true,hostmem=512M}
+log=$results/gl-venus.log
+
+[[ -f $kernel_image ]] || { printf 'missing kernel image: %s\n' "$kernel_image" >&2; exit 2; }
+command -v qemu-system-x86_64 >/dev/null
+command -v virtme-run >/dev/null
+command -v cc >/dev/null
+command -v pkg-config >/dev/null
+if pgrep -f '^/usr/bin/qemu-system-|^qemu-system-' >/dev/null; then
+	printf 'another QEMU VM is active\n' >&2
+	exit 1
+fi
+export VIRGL_GBM_LAYOUT_ENABLE=${VIRGL_GBM_LAYOUT_ENABLE:-1}
+[[ $VIRGL_GBM_LAYOUT_ENABLE == 0 || $VIRGL_GBM_LAYOUT_ENABLE == 1 ]] || {
+	printf 'VIRGL_GBM_LAYOUT_ENABLE must be 0 or 1\n' >&2
+	exit 2
+}
+mkdir -p "$results"
+cc -std=c11 -Wall -Wextra -Werror -O2 \
+	"$script_dir/gl-venus-pixels.c" -o "$results/gl-venus-pixels" \
+	$(pkg-config --cflags --libs gbm egl glesv2 vulkan)
+
+printf 'Host virgl GBM layout: %s\nVM log: %s\n' \
+	"$VIRGL_GBM_LAYOUT_ENABLE" "$log"
+set +e
+nice -n 15 timeout 90s "$script_dir/virtme-egl-run" \
+	--force-9p --disable-microvm --mods auto --show-boot-console \
+	--kimg "$kernel_image" --memory 2G --cpus 4 --net user \
+	--rwdir="/run/results=$results" \
+	-a kunit.enable=0 -a vkms.create_default_dev=0 \
+	-q=-device -q="$gpu_device" \
+	-q=-display -q=egl-headless,gl=on \
+	--script-sh 'export VK_DRIVER_FILES=/usr/share/vulkan/icd.d/virtio_icd.x86_64.json; udevadm settle; /run/results/gl-venus-pixels /dev/dri/renderD128' \
+	>"$log" 2>&1
+status=$?
+set -e
+if ((status != 0)) || ! grep -Fq \
+	'PASS: GL-rendered DMA-BUF pixels reached Venus' "$log"; then
+	tail -100 "$log" >&2
+	exit 1
+fi
+if grep -Eq 'BUG:|Oops|Call Trace:|WARNING:' "$log"; then
+	printf 'guest kernel reported a failure; inspect %s\n' "$log" >&2
+	exit 1
+fi
+printf 'PASS: GL-rendered DMA-BUF pixels reached Venus\n'
