@@ -572,7 +572,6 @@ build_gsettings_desktop_schemas()
 		--buildtype=debugoptimized
 	meson compile -C "$build" -j "$(jobs)"
 	DESTDIR="$stage" meson install -C "$build" --no-rebuild
-	glib-compile-schemas --strict "$stage/usr/share/glib-2.0/schemas"
 }
 
 build_gtk4()
@@ -977,6 +976,15 @@ validate_stage()
 		usr/lib/pronk-sysext/manifest; do
 		[[ -e $stage/$required ]] || die "staged extension is missing /$required"
 	done
+	python3 -c '
+import sys
+from gi.repository import Gio
+
+source = Gio.SettingsSchemaSource.new_from_directory(sys.argv[1], None, False)
+for name in ("org.gnome.mutter", "org.gnome.mutter.wayland"):
+    if source.lookup(name, False) is None:
+        raise SystemExit(f"staged extension lacks compiled schema {name}")
+' "$stage/usr/share/glib-2.0/schemas"
 
 	find "$stage/usr/lib64" -name 'libmutter-*.so.*' -print -quit | grep -q . || \
 		die 'staged extension is missing the Mutter shared library'
@@ -1144,6 +1152,7 @@ build_in_container()
 	build_pronk "$stage"
 	build_castkms_renderer "$stage"
 	stage_castkms_runtime_policy "$stage"
+	glib-compile-schemas --strict "$stage/usr/share/glib-2.0/schemas"
 	write_extension_metadata "$stage" "$identifier" "$@"
 	validate_target_abi "$stage"
 }
