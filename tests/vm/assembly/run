@@ -62,10 +62,6 @@ fi
 	printf 'PRONK_VM_PATTERN must be gtk or shm\n' >&2
 	exit 2
 }
-if [[ $pattern == shm && $test_case != gpu-capture ]]; then
-	printf 'direct Wayland pattern requires gpu-capture test\n' >&2
-	exit 2
-fi
 [[ $allow_kernel_release_mismatch == 0 || $allow_kernel_release_mismatch == 1 ]] || {
 	printf 'PRONK_VM_ALLOW_KERNEL_RELEASE_MISMATCH must be 0 or 1\n' >&2
 	exit 2

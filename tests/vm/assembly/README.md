@@ -121,7 +121,8 @@ does not qualify the pinned staged revision.
 `PRONK_VM_USE_FBOS=0` or `1` overrides Mutter's FBO choice for diagnosis;
 the default `auto` tests Mutter's own policy.
 `PRONK_VM_PATTERN=shm` uses a direct Wayland shared-memory client to isolate
-Mutter's texture upload and rendering from GTK; it requires `gpu-capture`.
+Mutter's texture upload and rendering from GTK. In the media test it alternates
+the two gray values checked by the decoded-pixel oracle.
 `PRONK_VM_DISABLE_VIRTIO_OUTPUT=1` disconnects the guest's virtio display
 while retaining virtio GPU rendering. The media test leaves it connected by
 default.
