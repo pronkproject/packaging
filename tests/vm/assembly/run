@@ -101,7 +101,8 @@ if [[ -n $mesa_stage ]]; then
 fi
 if [[ -n $video_build ]]; then
 	[[ -n $mesa_stage && -x $video_build/qemu/qemu-system-x86_64 &&
-	   -f $video_build/virglrenderer/src/libvirglrenderer.so.1 ]] || {
+	   -f $video_build/virglrenderer/src/libvirglrenderer.so.1 &&
+	   -x $video_build/virglrenderer/server/virgl_render_server ]] || {
 		printf 'video VM build and video-enabled Mesa stage are required together\n' >&2
 		exit 2
 	}
@@ -109,8 +110,11 @@ if [[ -n $video_build ]]; then
 		"$video_build/manifest"
 	grep -Fqx "VIRGLRENDERER_REVISION=$(git -C "$packaging_root/sources/virglrenderer" rev-parse HEAD)" \
 		"$video_build/manifest"
-	if [[ -z ${PRONK_VM_GPU_DEVICE:-} ]]; then
-	fi
+	"$video_build/qemu/qemu-system-x86_64" -netdev help |
+		grep -Eq '^user([[:space:]]|$)' || {
+		printf 'video VM QEMU lacks user-mode networking\n' >&2
+		exit 2
+	}
 fi
 [[ $drm_debug =~ ^(0x[0-9a-fA-F]+|[0-9]+)$ ]] || {
 	printf 'PRONK_VM_DRM_DEBUG must be a numeric DRM debug mask\n' >&2
@@ -182,6 +186,7 @@ export VIRGL_GBM_LAYOUT_ENABLE=${VIRGL_GBM_LAYOUT_ENABLE:-1}
 qemu_args=()
 if [[ -n $video_build ]]; then
 	export LD_LIBRARY_PATH="$video_build/virglrenderer/src${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}"
+	export RENDER_SERVER_EXEC_PATH="$video_build/virglrenderer/server/virgl_render_server"
 	qemu_args+=(--qemu-bin "$video_build/qemu/qemu-system-x86_64")
 fi
 [[ $VIRGL_GBM_LAYOUT_ENABLE == 0 || $VIRGL_GBM_LAYOUT_ENABLE == 1 ]] || {
