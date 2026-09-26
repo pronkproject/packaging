@@ -1,0 +1,57 @@
+#!/usr/bin/env bash
+# SPDX-License-Identifier: GPL-2.0-or-later
+
+set -euo pipefail
+
+script_dir=$(CDPATH='' cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd -P)
+packaging_root=$(CDPATH='' cd -- "$script_dir/../../.." && pwd -P)
+qemu_source=$packaging_root/sources/qemu
+virgl_source=$packaging_root/sources/virglrenderer
+state=${PRONK_VM_VIDEO_BUILD_STATE:-${XDG_STATE_HOME:-$HOME/.local/state}/pronk-vm-video}
+jobs=${PRONK_VM_VIDEO_BUILD_JOBS:-2}
+
+[[ $jobs =~ ^[1-9][0-9]*$ ]] || {
+	printf 'PRONK_VM_VIDEO_BUILD_JOBS must be a positive integer\n' >&2
+	exit 2
+}
+[[ -f $qemu_source/configure && -f $virgl_source/meson.build ]] || {
+	printf 'initialize the QEMU and virglrenderer submodules first\n' >&2
+	exit 2
+}
+
+qemu_revision=$(git -C "$qemu_source" rev-parse HEAD)
+virgl_revision=$(git -C "$virgl_source" rev-parse HEAD)
+build=$state/$qemu_revision-$virgl_revision
+virgl_build=$build/virglrenderer
+qemu_build=$build/qemu
+mkdir -p "$build" "$qemu_build"
+
+if [[ -f $virgl_build/build.ninja ]]; then
+	meson setup --reconfigure "$virgl_build" "$virgl_source" \
+		-Dvideo=true -Dvenus=true
+else
+	meson setup "$virgl_build" "$virgl_source" \
+		-Dvideo=true -Dvenus=true
+fi
+meson compile -C "$virgl_build" -j "$jobs"
+
+if [[ ! -f $qemu_build/build.ninja ]]; then
+	(
+		cd "$qemu_build"
+		PKG_CONFIG_PATH="$virgl_build/meson-uninstalled${PKG_CONFIG_PATH:+:$PKG_CONFIG_PATH}" \
+			"$qemu_source/configure" --target-list=x86_64-softmmu \
+			--enable-virglrenderer --enable-opengl --disable-docs \
+			--disable-gtk --disable-sdl --disable-vnc \
+			--disable-tools --disable-user
+	)
+fi
+meson compile -C "$qemu_build" -j "$jobs" qemu-system-x86_64
+
+[[ -x $qemu_build/qemu-system-x86_64 &&
+   -f $virgl_build/src/libvirglrenderer.so.1 ]] || {
+	printf 'video VM build is incomplete\n' >&2
+	exit 1
+}
+printf 'QEMU_REVISION=%s\nVIRGLRENDERER_REVISION=%s\n' \
+	"$qemu_revision" "$virgl_revision" > "$build/manifest"
+printf 'PRONK_VM_VIDEO_BUILD=%s\n' "$build"

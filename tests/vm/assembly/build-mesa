@@ -38,7 +38,8 @@ options=(
 	--prefix=/usr --libdir=lib64 --buildtype=release
 	-Dgallium-drivers="$drivers" -Dvulkan-drivers=
 	-Dplatforms=wayland -Dglx=disabled -Degl=enabled -Dgbm=enabled
-	-Dgles2=enabled -Dgallium-va=disabled -Dllvm=disabled
+	-Dgles2=enabled -Dgallium-va=enabled -Dllvm=disabled
+	-Dvideo-codecs=all
 )
 if [[ -f $build/build.ninja ]]; then
 	meson setup --reconfigure "$build" "$source" "${options[@]}"
@@ -47,8 +48,8 @@ else
 fi
 meson compile -C "$build" -j "$jobs"
 DESTDIR="$stage" meson install -C "$build" --no-rebuild --tags runtime
-printf 'MESA_REVISION=%s\nMESA_VERSION=%s\nMESA_DRIVERS=%s\n' \
-	"$revision" "$version" "$drivers" > \
+printf 'MESA_REVISION=%s\nMESA_VERSION=%s\nMESA_DRIVERS=%s\nMESA_VIDEO=%s\nMESA_VIDEO_CODECS=%s\n' \
+	"$revision" "$version" "$drivers" 1 all > \
 	"$stage/usr/lib/pronk-vm-mesa/manifest"
 "$script_dir/check-mesa-stage" "$stage"
 printf 'PRONK_VM_MESA_STAGE=%s\n' "$stage"

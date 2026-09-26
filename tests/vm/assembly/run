@@ -25,6 +25,7 @@ renderer_build=${PRONK_VM_RENDERER_BUILD:-}
 use_renderer=${PRONK_VM_USE_RENDERER:-1}
 pronk_bin_dir=${PRONK_VM_PRONK_BIN_DIR:-}
 mesa_stage=${PRONK_VM_MESA_STAGE:-}
+video_build=${PRONK_VM_VIDEO_BUILD:-}
 drm_debug=${PRONK_VM_DRM_DEBUG:-0}
 gpu_device=${PRONK_VM_GPU_DEVICE:-virtio-gpu-gl-pci,blob=true,venus=true,hostmem=512M}
 disable_virtio_output=${PRONK_VM_DISABLE_VIRTIO_OUTPUT:-}
@@ -98,6 +99,19 @@ fi
 if [[ -n $mesa_stage ]]; then
 	mesa_libdir=$("$script_dir/check-mesa-stage" --libdir "$mesa_stage")
 fi
+if [[ -n $video_build ]]; then
+	[[ -n $mesa_stage && -x $video_build/qemu/qemu-system-x86_64 &&
+	   -f $video_build/virglrenderer/src/libvirglrenderer.so.1 ]] || {
+		printf 'video VM build and video-enabled Mesa stage are required together\n' >&2
+		exit 2
+	}
+	grep -Fqx "QEMU_REVISION=$(git -C "$packaging_root/sources/qemu" rev-parse HEAD)" \
+		"$video_build/manifest"
+	grep -Fqx "VIRGLRENDERER_REVISION=$(git -C "$packaging_root/sources/virglrenderer" rev-parse HEAD)" \
+		"$video_build/manifest"
+	if [[ -z ${PRONK_VM_GPU_DEVICE:-} ]]; then
+	fi
+fi
 [[ $drm_debug =~ ^(0x[0-9a-fA-F]+|[0-9]+)$ ]] || {
 	printf 'PRONK_VM_DRM_DEBUG must be a numeric DRM debug mask\n' >&2
 	exit 2
@@ -134,10 +148,17 @@ done
 	printf 'Mutter session test runner is missing\n' >&2
 	exit 2
 }
-command -v qemu-system-x86_64 >/dev/null
+if [[ -z $video_build ]]; then
+	command -v qemu-system-x86_64 >/dev/null
+fi
 command -v virtme-run >/dev/null
 if pgrep -f '^/usr/bin/qemu-system-|^qemu-system-' >/dev/null; then
 	printf 'another QEMU VM is active\n' >&2
+	exit 1
+fi
+if [[ -n $video_build ]] &&
+   pgrep -f "^$video_build/qemu/qemu-system-x86_64 " >/dev/null; then
+	printf 'another video VM is active\n' >&2
 	exit 1
 fi
 mkdir -p "$results"
@@ -158,12 +179,17 @@ fi
 # This is a host virglrenderer setting, not a guest or CastKMS setting.
 # Explicit 0 remains available for a negative-control run.
 export VIRGL_GBM_LAYOUT_ENABLE=${VIRGL_GBM_LAYOUT_ENABLE:-1}
+qemu_args=()
+if [[ -n $video_build ]]; then
+	export LD_LIBRARY_PATH="$video_build/virglrenderer/src${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}"
+	qemu_args+=(--qemu-bin "$video_build/qemu/qemu-system-x86_64")
+fi
 [[ $VIRGL_GBM_LAYOUT_ENABLE == 0 || $VIRGL_GBM_LAYOUT_ENABLE == 1 ]] || {
 	printf 'VIRGL_GBM_LAYOUT_ENABLE must be 0 or 1\n' >&2
 	exit 2
 }
-guest_command=$(printf 'PRONK_VM_COPY_MODE=%q PRONK_VM_RECEIVER=%q PRONK_VM_ALLOW_KERNEL_RELEASE_MISMATCH=%q PRONK_VM_USE_MUTTER_BUILD=%q PRONK_VM_USE_FBOS=%q PRONK_VM_TEST=%q PRONK_VM_USE_PRONK_BIN=%q PRONK_VM_USE_MESA_STAGE=%q PRONK_VM_MESA_LIBDIR=%q PRONK_VM_USE_RENDERER=%q PRONK_PATTERN_BIN=%q sh /run/test/guest %q %q %q %q' \
-    "$copy_mode" "$receiver" "$allow_kernel_release_mismatch" "$use_mutter_build" "$use_fbos" "$test_case" "${pronk_bin_dir:+1}" "${mesa_stage:+1}" "${mesa_libdir:-}" "$use_renderer" "$pattern_bin" \
+guest_command=$(printf 'PRONK_VM_COPY_MODE=%q PRONK_VM_RECEIVER=%q PRONK_VM_ALLOW_KERNEL_RELEASE_MISMATCH=%q PRONK_VM_USE_MUTTER_BUILD=%q PRONK_VM_USE_FBOS=%q PRONK_VM_TEST=%q PRONK_VM_USE_PRONK_BIN=%q PRONK_VM_USE_MESA_STAGE=%q PRONK_VM_MESA_LIBDIR=%q PRONK_VM_USE_RENDERER=%q PRONK_VM_USE_VIDEO=%q PRONK_PATTERN_BIN=%q sh /run/test/guest %q %q %q %q' \
+    "$copy_mode" "$receiver" "$allow_kernel_release_mismatch" "$use_mutter_build" "$use_fbos" "$test_case" "${pronk_bin_dir:+1}" "${mesa_stage:+1}" "${mesa_libdir:-}" "$use_renderer" "${video_build:+1}" "$pattern_bin" \
 	"$crtc_id" "$connector_id" "$width" "$height")
 
 printf 'Host virgl GBM layout: %s\n' "$VIRGL_GBM_LAYOUT_ENABLE"
@@ -192,6 +218,7 @@ fi
 nice -n 15 timeout 180s "$script_dir/virtme-egl-run" \
 	--force-9p --disable-microvm --mods auto --show-boot-console \
 	--kimg "$kernel_image" --memory 2G --cpus 4 --net user \
+	"${qemu_args[@]}" \
 	--rwdir="/run/results=$results" \
 	--rodir="/run/kernel-build=$kernel_build" \
 	--rodir="/run/extension=$stage" \

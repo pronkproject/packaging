@@ -1,0 +1,93 @@
+#!/usr/bin/env bash
+# SPDX-License-Identifier: GPL-2.0-or-later
+
+set -euo pipefail
+
+script_dir=$(CDPATH='' cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd -P)
+packaging_root=$(CDPATH='' cd -- "$script_dir/../../.." && pwd -P)
+kernel_image=${PRONK_VM_KERNEL_IMAGE:?set PRONK_VM_KERNEL_IMAGE to a CastKMS bzImage}
+mesa_stage=${PRONK_VM_MESA_STAGE:?set PRONK_VM_MESA_STAGE to a video-enabled Mesa stage}
+video_build=${PRONK_VM_VIDEO_BUILD:?set PRONK_VM_VIDEO_BUILD to build-virtio-video output}
+results_root=${PRONK_VM_RESULTS:-${XDG_STATE_HOME:-$HOME/.local/state}/pronk-vm-results}
+profile=${PRONK_VM_VIDEO_PROFILE:-main}
+width=${PRONK_VM_VIDEO_WIDTH:-1280}
+height=${PRONK_VM_VIDEO_HEIGHT:-720}
+frames=${PRONK_VM_VIDEO_FRAMES:-30}
+qemu_bin=$video_build/qemu/qemu-system-x86_64
+virgl_lib=$video_build/virglrenderer/src
+
+[[ $profile == main || $profile == high ]] || {
+	printf 'PRONK_VM_VIDEO_PROFILE must be main or high\n' >&2
+	exit 2
+}
+for value in "$width" "$height" "$frames"; do
+	[[ $value =~ ^[1-9][0-9]*$ ]] || {
+		printf 'video width, height and frame count must be positive integers\n' >&2
+		exit 2
+	}
+done
+[[ -f $kernel_image && -x $qemu_bin &&
+   -f $virgl_lib/libvirglrenderer.so.1 ]] || {
+	printf 'kernel image or video VM build is missing\n' >&2
+	exit 2
+}
+grep -Fqx "QEMU_REVISION=$(git -C "$packaging_root/sources/qemu" rev-parse HEAD)" \
+	"$video_build/manifest"
+grep -Fqx "VIRGLRENDERER_REVISION=$(git -C "$packaging_root/sources/virglrenderer" rev-parse HEAD)" \
+	"$video_build/manifest"
+mesa_libdir=$("$script_dir/check-mesa-stage" --libdir "$mesa_stage")
+if pgrep -f "^$qemu_bin " >/dev/null; then
+	printf 'a VM from the video build is already active\n' >&2
+	exit 1
+fi
+
+cleanup() {
+	local pid
+	while read -r pid; do
+		[[ -n $pid ]] || continue
+		kill -TERM "$pid" 2>/dev/null || true
+		kill -KILL "$pid" 2>/dev/null || true
+	done < <(pgrep -f "^$qemu_bin " || true)
+}
+trap cleanup EXIT
+
+mkdir -p "$results_root"
+results=$(mktemp -d "$results_root/virtio-video-$profile.XXXXXXXX")
+log=$results/encode.log
+output=$results/encoded.h264
+guest_command=$(printf 'LIBVA_DRIVER_NAME=virtio_gpu LIBVA_DRIVERS_PATH=%q LD_LIBRARY_PATH=%q ffmpeg -hide_banner -loglevel warning -vaapi_device /dev/dri/renderD128 -f lavfi -i %q -frames:v %q -vf format=nv12,hwupload -c:v h264_vaapi -profile:v %q -y %q' \
+	"/run/mesa-stage/$mesa_libdir/dri" \
+	"/run/mesa-stage/$mesa_libdir:/usr/lib64" \
+	"testsrc2=size=${width}x${height}:rate=30" "$frames" "$profile" \
+	"/run/results/encoded.h264")
+
+export LD_LIBRARY_PATH="$virgl_lib${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}"
+export VIRGL_GBM_LAYOUT_ENABLE=1
+set +e
+nice -n 15 timeout 90s "$script_dir/virtme-egl-run" \
+	--force-9p --disable-microvm --mods auto --show-boot-console \
+	--kimg "$kernel_image" --memory 2G --cpus 2 --net loop \
+	--qemu-bin "$qemu_bin" \
+	--rwdir="/run/results=$results" \
+	--rodir="/run/mesa-stage=$mesa_stage" \
+	-q=-device -q=virtio-gpu-gl-pci,blob=true,venus=true,hostmem=512M \
+	-q=-display -q=egl-headless,gl=on \
+	--script-sh "$guest_command" > "$log" 2>&1
+status=$?
+set -e
+if (( status != 0 )); then
+	tail -60 "$log" >&2
+	exit "$status"
+fi
+
+[[ -s $output ]] || { printf 'guest did not produce a bitstream\n' >&2; exit 1; }
+ffmpeg -v error -i "$output" -f null -
+decoded=$(ffprobe -v error -select_streams v:0 -count_frames \
+	-show_entries stream=nb_read_frames -of default=noprint_wrappers=1:nokey=1 \
+	"$output")
+[[ $decoded == "$frames" ]] || {
+	printf 'decoded %s of %s frames\n' "$decoded" "$frames" >&2
+	exit 1
+}
+printf 'Decoded %s %s frames at %sx%s from %s\n' \
+	"$frames" "$profile" "$width" "$height" "$output"

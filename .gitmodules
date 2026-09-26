@@ -54,3 +54,11 @@
 [submodule "sources/mesa"]
 	path = sources/mesa
 	url = https://github.com/pronkproject/mesa.git
+[submodule "sources/qemu"]
+	path = sources/qemu
+	url = https://github.com/pronkproject/qemu.git
+	branch = pronk-virtio-video
+[submodule "sources/virglrenderer"]
+	path = sources/virglrenderer
+	url = https://github.com/pronkproject/virglrenderer.git
+	branch = pronk-virtio-video

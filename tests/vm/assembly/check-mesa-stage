@@ -29,6 +29,14 @@ grep -Fqx 'MESA_DRIVERS=virgl,zink,softpipe' "$manifest" || {
 	printf 'Mesa VM stage lacks the full graphics driver set\n' >&2
 	exit 2
 }
+grep -Fqx 'MESA_VIDEO=1' "$manifest" || {
+	printf 'Mesa VM stage lacks the VA video frontend\n' >&2
+	exit 2
+}
+grep -Fqx 'MESA_VIDEO_CODECS=all' "$manifest" || {
+	printf 'Mesa VM stage lacks the H.264 codec build\n' >&2
+	exit 2
+}
 libdir=usr/lib64
 if [[ ! -f $stage/$libdir/libgallium-$version.so ]]; then
 	libdir=usr/local/lib64
@@ -39,6 +47,10 @@ for file in "libgallium-$version.so" libgbm.so.1 libEGL_mesa.so.0 gbm/dri_gbm.so
 		exit 2
 	}
 done
+[[ -f $stage/$libdir/dri/virtio_gpu_drv_video.so ]] || {
+	printf 'Mesa VM stage is missing virtio-gpu VA video driver\n' >&2
+	exit 2
+}
 if [[ $mode == libdir ]]; then
 	printf '%s\n' "$libdir"
 fi
