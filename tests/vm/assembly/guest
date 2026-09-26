@@ -72,9 +72,9 @@ if test "${PRONK_VM_USE_MUTTER_BUILD:-0}" = 1; then
 	printf 'Using Mutter library from /run/mutter-build/src\n'
 fi
 if test "${PRONK_VM_USE_MESA_STAGE:-0}" = 1; then
-	test -f /run/mesa-stage/usr/local/lib64/libgallium-26.2.2.so
-	export LD_LIBRARY_PATH=/run/mesa-stage/usr/local/lib64:$LD_LIBRARY_PATH
-	export GBM_BACKENDS_PATH=/run/mesa-stage/usr/local/lib64/gbm
+	test -f /run/mesa-stage/$PRONK_VM_MESA_LIBDIR/libEGL_mesa.so.0
+	export LD_LIBRARY_PATH=/run/mesa-stage/$PRONK_VM_MESA_LIBDIR:$LD_LIBRARY_PATH
+	export GBM_BACKENDS_PATH=/run/mesa-stage/$PRONK_VM_MESA_LIBDIR/gbm
 	printf 'Using Mesa libraries from /run/mesa-stage\n'
 fi
 export META_DBUS_RUNNER_DISABLE_LOGIND_PASSTHROUGH=1
