@@ -9,15 +9,21 @@ kernel_image=${PRONK_VM_KERNEL_IMAGE:?set PRONK_VM_KERNEL_IMAGE to a CastKMS bzI
 mesa_stage=${PRONK_VM_MESA_STAGE:?set PRONK_VM_MESA_STAGE to a video-enabled Mesa stage}
 video_build=${PRONK_VM_VIDEO_BUILD:?set PRONK_VM_VIDEO_BUILD to build-virtio-video output}
 results_root=${PRONK_VM_RESULTS:-${XDG_STATE_HOME:-$HOME/.local/state}/pronk-vm-results}
-profile=${PRONK_VM_VIDEO_PROFILE:-main}
+profile=${PRONK_VM_VIDEO_PROFILE:-all}
 width=${PRONK_VM_VIDEO_WIDTH:-1280}
 height=${PRONK_VM_VIDEO_HEIGHT:-720}
 frames=${PRONK_VM_VIDEO_FRAMES:-30}
 qemu_bin=$video_build/qemu/qemu-system-x86_64
 virgl_lib=$video_build/virglrenderer/src
 
+if [[ $profile == all ]]; then
+	for scenario in main high; do
+		PRONK_VM_VIDEO_PROFILE=$scenario "$script_dir/run-virtio-video"
+	done
+	exit 0
+fi
 [[ $profile == main || $profile == high ]] || {
-	printf 'PRONK_VM_VIDEO_PROFILE must be main or high\n' >&2
+	printf 'PRONK_VM_VIDEO_PROFILE must be all, main or high\n' >&2
 	exit 2
 }
 for value in "$width" "$height" "$frames"; do
@@ -82,6 +88,18 @@ fi
 
 [[ -s $output ]] || { printf 'guest did not produce a bitstream\n' >&2; exit 1; }
 ffmpeg -v error -i "$output" -f null -
+reported_profile=$(ffprobe -v error -select_streams v:0 \
+	-show_entries stream=profile -of default=noprint_wrappers=1:nokey=1 \
+	"$output")
+case $profile in
+	main) expected_profile=Main ;;
+	high) expected_profile=High ;;
+esac
+[[ $reported_profile == "$expected_profile" ]] || {
+	printf 'encoded profile is %s, expected %s\n' \
+		"$reported_profile" "$expected_profile" >&2
+	exit 1
+}
 decoded=$(ffprobe -v error -select_streams v:0 -count_frames \
 	-show_entries stream=nb_read_frames -of default=noprint_wrappers=1:nokey=1 \
 	"$output")

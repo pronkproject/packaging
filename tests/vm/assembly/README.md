@@ -57,15 +57,14 @@ graphics stack. Keep the default build job count at two on memory-limited
 hosts.
 
 ```sh
-tests/vm/assembly/build-mesa
 tests/vm/assembly/build-virtio-video
 ```
 
 Set `PRONK_VM_MESA_STAGE` and `PRONK_VM_VIDEO_BUILD` to the paths printed by
 those commands. `run-virtio-video` boots a two-CPU VM, encodes a moving test
 pattern through the guest virtio-gpu VA driver, and requires every output
-frame to decode on the host. It uses H.264 Main by default; set
-`PRONK_VM_VIDEO_PROFILE=high` to check High with the same acceptance test.
+frame to decode on the host. It checks H.264 Main and High by default;
+`PRONK_VM_VIDEO_PROFILE` can select one profile while diagnosing a failure.
 The script confines the pinned QEMU and virglrenderer to that VM. When the
 host has a GBM render node, QEMU offers its video capability automatically.
 
