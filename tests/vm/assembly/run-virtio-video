@@ -85,7 +85,7 @@ if (( status != 0 )); then
 fi
 
 [[ -s $output ]] || { printf 'guest did not produce a bitstream\n' >&2; exit 1; }
-ffmpeg -v error -i "$output" -f null -
+ffmpeg -v error -xerror -i "$output" -f null -
 reported_profile=$(ffprobe -v error -select_streams v:0 \
 	-show_entries stream=profile -of default=noprint_wrappers=1:nokey=1 \
 	"$output")
