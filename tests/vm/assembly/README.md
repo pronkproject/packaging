@@ -40,6 +40,15 @@ linear modifier; these isolate two more parts of Mutter's EGL/GBM setup.
 `PRONK_VM_TEST_SWAPS` repeats render-and-swap before importing the last GBM
 front buffer (1 by default, at most 8).
 
+`build-mesa` builds the pinned Mesa source into a VM-only runtime stage. It
+checks that its version matches the host Mesa package and installs matching
+Gallium, GBM, and EGL libraries together. This avoids substituting a partial
+graphics stack on the host:
+
+```sh
+tests/vm/assembly/build-mesa
+```
+
 Build the kernel and userspace stage first. The kernel image must correspond
 to the release recorded in the stage manifest. Build the Pronk
 `pronk-capture-mutter-media-live-test` and
