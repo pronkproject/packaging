@@ -66,8 +66,9 @@ tests/vm/assembly/run-virgl-import
 
 Build the kernel and userspace stage first. The kernel image must correspond
 to the release recorded in the stage manifest. Build the Pronk
-`pronk-capture-mutter-media-live-test` and
-`pronk-capture-pattern-client` binaries in `sources/pronk/target/debug`, and
+`pronk-capture-mutter-media-live-test`,
+`pronk-capture-mutter-gpu-live-test`, and `pronk-capture-pattern-client`
+binaries in `sources/pronk/target/debug`, and
 provide a Mutter build directory for its session test runner. The launcher
 checks the staged CastKMS, Pronk, and Mutter revisions against the source
 submodules. It uses the installed `virtme-run`, QEMU, and host EGL stack.
@@ -75,8 +76,7 @@ Set `PRONK_VM_MESA_STAGE` to the `build-mesa` stage to overlay the pinned
 runtime in the full assembly test. The stage's source revision and Mesa
 version are checked before booting.
 
-For a GPU-only capture check, also build
-`pronk-capture-mutter-gpu-live-test` and set `PRONK_VM_TEST=gpu-capture` with
+For a GPU-only capture check, set `PRONK_VM_TEST=gpu-capture` with
 `PRONK_VM_COPY_MODE=zero-copy`. This test allocates one Vulkan-owned
 destination, registers it with capture, and checks that three requests
 complete with advancing timestamps. A test-only Vulkan readback then checks
@@ -84,14 +84,16 @@ the center pixel for nonblack content and a changing shade; the production
 capture path does not map pixels on the CPU. The probe does not encode video
 or contact a receiver. Run `run-gl-venus` separately to check a
 GLES-produced buffer's pixels after Venus import.
+The GPU capture test disconnects the virtio display by default so its
+fullscreen pattern appears on CastKMS rather than the other monitor.
+Set `PRONK_VM_DISABLE_VIRTIO_OUTPUT=0` to test an explicitly configured
+multiple-display layout.
 
 `PRONK_VM_COPY_MODE=primary-gpu-gpu` is also accepted by the GPU capture
 probe to isolate Mutter's GPU copy from its direct import path.
 
-If the staged Pronk source does not contain the probe, set
-`PRONK_VM_PRONK_BIN_DIR` to the directory containing a separately built probe
-and matching `pronk-capture-pattern-client`. The installed service and staged
-source revisions remain unchanged; the override affects test executables only.
+`PRONK_VM_PRONK_BIN_DIR` can select separately built test executables without
+changing the installed service or staged source revisions.
 
 The CRTC and connector IDs are explicit because they belong to the booted
 CastKMS instance, not to the packaging source tree. For a previously inspected
@@ -121,7 +123,8 @@ the default `auto` tests Mutter's own policy.
 `PRONK_VM_PATTERN=shm` uses a direct Wayland shared-memory client to isolate
 Mutter's texture upload and rendering from GTK; it requires `gpu-capture`.
 `PRONK_VM_DISABLE_VIRTIO_OUTPUT=1` disconnects the guest's virtio display
-while retaining virtio GPU rendering.
+while retaining virtio GPU rendering. The media test leaves it connected by
+default.
 Set `PRONK_VM_DRM_DEBUG=0x1ff` when diagnosing a kernel DRM rejection; the
 default mask is `0`, and the guest's `dmesg` is saved as `kernel.log`.
 The guest requires the kernel release in the stage manifest to match its
