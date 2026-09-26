@@ -184,7 +184,9 @@ int main(int argc, char **argv)
 	create_image(&app, &app.images[1]);
 	for (;;) {
 		struct image *image = &app.images[frame % 2];
-		uint32_t shade = 0x30 + (frame * 31u) % 160;
+		uint32_t shade = getenv("PRONK_PATTERN_TEST_GRAY") ?
+			(frame % 2 ? 0x68 : 0x49) :
+			0x30 + (frame * 31u) % 160;
 		uint32_t pixel = 0xff000000u | (shade << 16) |
 			(shade << 8) | shade;
 		if (wl_display_roundtrip(app.display) < 0)
