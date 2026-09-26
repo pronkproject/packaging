@@ -1,0 +1,19 @@
+#!/bin/sh
+# SPDX-License-Identifier: GPL-2.0-or-later
+
+set -eu
+
+mesa_libdir=$1
+profile=$2
+width=$3
+height=$4
+frames=$5
+
+export LIBVA_DRIVER_NAME=virtio_gpu
+export LIBVA_DRIVERS_PATH=/run/mesa-stage/$mesa_libdir/dri
+export LD_LIBRARY_PATH=/run/mesa-stage/$mesa_libdir:/usr/lib64
+
+ffmpeg -hide_banner -loglevel warning -vaapi_device /dev/dri/renderD128 \
+	-f lavfi -i "testsrc2=size=${width}x${height}:rate=30" -frames:v "$frames" \
+	-vf format=nv12,hwupload -c:v h264_vaapi -profile:v "$profile" \
+	-y /run/results/encoded.h264

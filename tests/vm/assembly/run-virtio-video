@@ -61,11 +61,8 @@ mkdir -p "$results_root"
 results=$(mktemp -d "$results_root/virtio-video-$profile.XXXXXXXX")
 log=$results/encode.log
 output=$results/encoded.h264
-guest_command=$(printf 'LIBVA_DRIVER_NAME=virtio_gpu LIBVA_DRIVERS_PATH=%q LD_LIBRARY_PATH=%q ffmpeg -hide_banner -loglevel warning -vaapi_device /dev/dri/renderD128 -f lavfi -i %q -frames:v %q -vf format=nv12,hwupload -c:v h264_vaapi -profile:v %q -y %q' \
-	"/run/mesa-stage/$mesa_libdir/dri" \
-	"/run/mesa-stage/$mesa_libdir:/usr/lib64" \
-	"testsrc2=size=${width}x${height}:rate=30" "$frames" "$profile" \
-	"/run/results/encoded.h264")
+guest_command=$(printf 'sh /run/test/virtio-video-guest %q %q %q %q %q' \
+	"$mesa_libdir" "$profile" "$width" "$height" "$frames")
 
 export LD_LIBRARY_PATH="$virgl_lib${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}"
 export VIRGL_GBM_LAYOUT_ENABLE=1
@@ -75,6 +72,7 @@ nice -n 15 timeout 90s "$script_dir/virtme-egl-run" \
 	--kimg "$kernel_image" --memory 2G --cpus 2 --net loop \
 	--qemu-bin "$qemu_bin" \
 	--rwdir="/run/results=$results" \
+	--rodir="/run/test=$script_dir" \
 	--rodir="/run/mesa-stage=$mesa_stage" \
 	-q=-device -q=virtio-gpu-gl-pci,blob=true,venus=true,hostmem=512M \
 	-q=-display -q=egl-headless,gl=on \
