@@ -134,6 +134,10 @@ deliberate local build from the same kernel sources with a different release
 suffix; the guest reports that mismatch. Do not use that override to qualify a
 publishable assembly.
 
+`PRONK_VM_USE_RENDERER=0` leaves the delegated renderer stopped so the VM can
+exercise the built-in HOST executor separately. The default is `1`. A HOST
+media pass does not qualify GPU composition or DMA-BUF delivery.
+
 For Venus, the host launcher defaults `VIRGL_GBM_LAYOUT_ENABLE=1` before
 starting QEMU. The variable makes virgl use host GBM storage for eligible
 shared resources so that its Venus proxy can export them. Set it explicitly

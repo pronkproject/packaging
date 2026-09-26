@@ -22,6 +22,7 @@ use_fbos=${PRONK_VM_USE_FBOS:-auto}
 test_case=${PRONK_VM_TEST:-media}
 pattern=${PRONK_VM_PATTERN:-gtk}
 renderer_build=${PRONK_VM_RENDERER_BUILD:-}
+use_renderer=${PRONK_VM_USE_RENDERER:-1}
 pronk_bin_dir=${PRONK_VM_PRONK_BIN_DIR:-}
 mesa_stage=${PRONK_VM_MESA_STAGE:-}
 drm_debug=${PRONK_VM_DRM_DEBUG:-0}
@@ -76,6 +77,10 @@ fi
 }
 [[ $disable_virtio_output == 0 || $disable_virtio_output == 1 ]] || {
 	printf 'PRONK_VM_DISABLE_VIRTIO_OUTPUT must be 0 or 1\n' >&2
+	exit 2
+}
+[[ $use_renderer == 0 || $use_renderer == 1 ]] || {
+	printf 'PRONK_VM_USE_RENDERER must be 0 or 1\n' >&2
 	exit 2
 }
 if [[ $use_mutter_build == 1 && ! -f $mutter_build/src/libmutter-51.so.0.0.0 ]]; then
@@ -157,8 +162,8 @@ export VIRGL_GBM_LAYOUT_ENABLE=${VIRGL_GBM_LAYOUT_ENABLE:-1}
 	printf 'VIRGL_GBM_LAYOUT_ENABLE must be 0 or 1\n' >&2
 	exit 2
 }
-guest_command=$(printf 'PRONK_VM_COPY_MODE=%q PRONK_VM_RECEIVER=%q PRONK_VM_ALLOW_KERNEL_RELEASE_MISMATCH=%q PRONK_VM_USE_MUTTER_BUILD=%q PRONK_VM_USE_FBOS=%q PRONK_VM_TEST=%q PRONK_VM_USE_PRONK_BIN=%q PRONK_VM_USE_MESA_STAGE=%q PRONK_VM_MESA_LIBDIR=%q PRONK_PATTERN_BIN=%q sh /run/test/guest %q %q %q %q' \
-    "$copy_mode" "$receiver" "$allow_kernel_release_mismatch" "$use_mutter_build" "$use_fbos" "$test_case" "${pronk_bin_dir:+1}" "${mesa_stage:+1}" "${mesa_libdir:-}" "$pattern_bin" \
+guest_command=$(printf 'PRONK_VM_COPY_MODE=%q PRONK_VM_RECEIVER=%q PRONK_VM_ALLOW_KERNEL_RELEASE_MISMATCH=%q PRONK_VM_USE_MUTTER_BUILD=%q PRONK_VM_USE_FBOS=%q PRONK_VM_TEST=%q PRONK_VM_USE_PRONK_BIN=%q PRONK_VM_USE_MESA_STAGE=%q PRONK_VM_MESA_LIBDIR=%q PRONK_VM_USE_RENDERER=%q PRONK_PATTERN_BIN=%q sh /run/test/guest %q %q %q %q' \
+    "$copy_mode" "$receiver" "$allow_kernel_release_mismatch" "$use_mutter_build" "$use_fbos" "$test_case" "${pronk_bin_dir:+1}" "${mesa_stage:+1}" "${mesa_libdir:-}" "$use_renderer" "$pattern_bin" \
 	"$crtc_id" "$connector_id" "$width" "$height")
 
 printf 'Host virgl GBM layout: %s\n' "$VIRGL_GBM_LAYOUT_ENABLE"

@@ -85,14 +85,16 @@ if test "${PRONK_VM_USE_FBOS:-auto}" != auto; then
 fi
 unset DBUS_SESSION_BUS_ADDRESS DBUS_SYSTEM_BUS_ADDRESS
 
-renderer=/usr/libexec/castkms/castkms-rendererd
-if test -x /run/renderer-build/castkms-rendererd; then
-	renderer=/run/renderer-build/castkms-rendererd
+if test "${PRONK_VM_USE_RENDERER:-1}" = 1; then
+	renderer=/usr/libexec/castkms/castkms-rendererd
+	if test -x /run/renderer-build/castkms-rendererd; then
+		renderer=/run/renderer-build/castkms-rendererd
+	fi
+	RUST_LOG=debug "$renderer" \
+		> /run/results/renderer.log 2>&1 &
+	renderer_pid=$!
+	trap 'kill "$renderer_pid" 2>/dev/null || :; wait "$renderer_pid" 2>/dev/null || :' EXIT
 fi
-RUST_LOG=debug "$renderer" \
-	> /run/results/renderer.log 2>&1 &
-renderer_pid=$!
-trap 'kill "$renderer_pid" 2>/dev/null || :; wait "$renderer_pid" 2>/dev/null || :' EXIT
 
 cd /run/mutter-source
 export G_TEST_SRCDIR=$PWD/src/tests
