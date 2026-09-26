@@ -28,7 +28,6 @@ mesa_stage=${PRONK_VM_MESA_STAGE:-}
 video_build=${PRONK_VM_VIDEO_BUILD:-}
 drm_debug=${PRONK_VM_DRM_DEBUG:-0}
 gpu_device=${PRONK_VM_GPU_DEVICE:-virtio-gpu-gl-pci,blob=true,venus=true,hostmem=512M}
-disable_virtio_output=${PRONK_VM_DISABLE_VIRTIO_OUTPUT:-}
 pronk_source=$packaging_root/sources/pronk
 mutter_source=$packaging_root/sources/mutter
 case $test_case in
@@ -36,12 +35,6 @@ media) test_name=pronk-capture-mutter-media-live-test ;;
 gpu-capture) test_name=pronk-capture-mutter-gpu-live-test ;;
 *) printf 'unsupported VM test: %s\n' "$test_case" >&2; exit 2 ;;
 esac
-if [[ -z $disable_virtio_output ]]; then
-	if [[ $test_case == gpu-capture ]]; then
-		disable_virtio_output=1
-	else
-		disable_virtio_output=0
-	fi
 fi
 test_binary=${pronk_bin_dir:-$pronk_source/target/debug}/$test_name
 log=$results/assembly.log
@@ -74,10 +67,6 @@ fi
 }
 [[ $use_fbos == auto || $use_fbos == 0 || $use_fbos == 1 ]] || {
 	printf 'PRONK_VM_USE_FBOS must be auto, 0 or 1\n' >&2
-	exit 2
-}
-[[ $disable_virtio_output == 0 || $disable_virtio_output == 1 ]] || {
-	printf 'PRONK_VM_DISABLE_VIRTIO_OUTPUT must be 0 or 1\n' >&2
 	exit 2
 }
 [[ $use_renderer == 0 || $use_renderer == 1 ]] || {
@@ -216,10 +205,6 @@ if [[ -n $mesa_stage ]]; then
 	mesa_mount+=("--rodir=/run/mesa-stage=$mesa_stage")
 fi
 set +e
-virtio_output_args=()
-if [[ $disable_virtio_output == 1 ]]; then
-	virtio_output_args+=(-a video=Virtual-1:d)
-fi
 nice -n 15 timeout 180s "$script_dir/virtme-egl-run" \
 	--force-9p --disable-microvm --mods auto --show-boot-console \
 	--kimg "$kernel_image" --memory 2G --cpus 4 --net user \
@@ -235,7 +220,6 @@ nice -n 15 timeout 180s "$script_dir/virtme-egl-run" \
 	--rodir="/run/pronk-source=$pronk_source" \
 	--rodir="/run/test=$script_dir" \
 	-a kunit.enable=0 -a vkms.create_default_dev=0 -a "drm.debug=$drm_debug" \
-	"${virtio_output_args[@]}" \
 	-q=-device -q="$gpu_device" \
 	-q=-display -q=egl-headless,gl=on \
 	--script-sh "$guest_command" >>"$log" 2>&1
