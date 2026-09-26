@@ -26,7 +26,7 @@ pronk_bin_dir=${PRONK_VM_PRONK_BIN_DIR:-}
 mesa_stage=${PRONK_VM_MESA_STAGE:-}
 drm_debug=${PRONK_VM_DRM_DEBUG:-0}
 gpu_device=${PRONK_VM_GPU_DEVICE:-virtio-gpu-gl-pci,blob=true,venus=true,hostmem=512M}
-disable_virtio_output=${PRONK_VM_DISABLE_VIRTIO_OUTPUT:-0}
+disable_virtio_output=${PRONK_VM_DISABLE_VIRTIO_OUTPUT:-}
 pronk_source=$packaging_root/sources/pronk
 mutter_source=$packaging_root/sources/mutter
 case $test_case in
@@ -34,6 +34,13 @@ media) test_name=pronk-capture-mutter-media-live-test ;;
 gpu-capture) test_name=pronk-capture-mutter-gpu-live-test ;;
 *) printf 'unsupported VM test: %s\n' "$test_case" >&2; exit 2 ;;
 esac
+if [[ -z $disable_virtio_output ]]; then
+	if [[ $test_case == gpu-capture ]]; then
+		disable_virtio_output=1
+	else
+		disable_virtio_output=0
+	fi
+fi
 test_binary=${pronk_bin_dir:-$pronk_source/target/debug}/$test_name
 log=$results/assembly.log
 
