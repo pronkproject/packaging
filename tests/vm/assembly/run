@@ -21,6 +21,11 @@ use_mutter_build=${PRONK_VM_USE_MUTTER_BUILD:-0}
 use_fbos=${PRONK_VM_USE_FBOS:-auto}
 test_case=${PRONK_VM_TEST:-media}
 guest_memory=${PRONK_VM_MEMORY:-2G}
+video_rate=${PRONK_VM_VIDEO_RATE:-30}
+[[ $video_rate == 30 || $video_rate == 60 ]] || {
+	printf 'PRONK_VM_VIDEO_RATE must be 30 or 60\n' >&2
+	exit 2
+}
 if [[ $test_case == media-gpu ]]; then
 	copy_mode=${PRONK_VM_COPY_MODE:-zero-copy}
 	guest_memory=${PRONK_VM_MEMORY:-4G}
@@ -205,8 +210,8 @@ fi
 	printf 'VIRGL_GBM_LAYOUT_ENABLE must be 0 or 1\n' >&2
 	exit 2
 }
-guest_command=$(printf 'PRONK_VM_COPY_MODE=%q PRONK_VM_RECEIVER=%q PRONK_VM_ALLOW_KERNEL_RELEASE_MISMATCH=%q PRONK_VM_USE_MUTTER_BUILD=%q PRONK_VM_USE_FBOS=%q PRONK_VM_TEST=%q PRONK_VM_GPU_MEDIA=%q PRONK_VM_USE_PRONK_BIN=%q PRONK_VM_USE_MESA_STAGE=%q PRONK_VM_MESA_LIBDIR=%q PRONK_VM_USE_RENDERER=%q PRONK_VM_USE_VIDEO=%q PRONK_PATTERN_BIN=%q sh /run/test/guest %q %q %q %q' \
-    "$copy_mode" "$receiver" "$allow_kernel_release_mismatch" "$use_mutter_build" "$use_fbos" "$test_case" "$gpu_media" "${pronk_bin_dir:+1}" "${mesa_stage:+1}" "${mesa_libdir:-}" "$use_renderer" "${video_build:+1}" "$pattern_bin" \
+guest_command=$(printf 'PRONK_VM_COPY_MODE=%q PRONK_VM_RECEIVER=%q PRONK_VM_ALLOW_KERNEL_RELEASE_MISMATCH=%q PRONK_VM_USE_MUTTER_BUILD=%q PRONK_VM_USE_FBOS=%q PRONK_VM_TEST=%q PRONK_VM_GPU_MEDIA=%q PRONK_VM_USE_PRONK_BIN=%q PRONK_VM_USE_MESA_STAGE=%q PRONK_VM_MESA_LIBDIR=%q PRONK_VM_USE_RENDERER=%q PRONK_VM_USE_VIDEO=%q PRONK_VM_VIDEO_RATE=%q PRONK_PATTERN_BIN=%q sh /run/test/guest %q %q %q %q' \
+    "$copy_mode" "$receiver" "$allow_kernel_release_mismatch" "$use_mutter_build" "$use_fbos" "$test_case" "$gpu_media" "${pronk_bin_dir:+1}" "${mesa_stage:+1}" "${mesa_libdir:-}" "$use_renderer" "${video_build:+1}" "$video_rate" "$pattern_bin" \
 	"$crtc_id" "$connector_id" "$width" "$height")
 
 printf 'Host virgl GBM layout: %s\n' "$VIRGL_GBM_LAYOUT_ENABLE"
