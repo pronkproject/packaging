@@ -1,0 +1,52 @@
+#!/usr/bin/env bash
+# SPDX-License-Identifier: GPL-2.0-or-later
+
+set -euo pipefail
+
+script_dir=$(CDPATH='' cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd -P)
+packaging_root=$(CDPATH='' cd -- "$script_dir/../../.." && pwd -P)
+source=$packaging_root/sources/mesa
+state=${PRONK_VM_MESA_BUILD_STATE:-${XDG_STATE_HOME:-$HOME/.local/state}/pronk-vm-mesa}
+build=$state/build
+revision=$(git -C "$source" rev-parse HEAD)
+version=$(rpm -q --qf '%{VERSION}' mesa-dri-drivers)
+stage=$state/stages/$revision-$version
+jobs=${PRONK_VM_MESA_BUILD_JOBS:-2}
+
+[[ $version =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]] || {
+	printf 'unsupported host Mesa version: %s\n' "$version" >&2
+	exit 2
+}
+[[ $jobs =~ ^[1-9][0-9]*$ ]] || {
+	printf 'PRONK_VM_MESA_BUILD_JOBS must be a positive integer\n' >&2
+	exit 2
+}
+[[ -f $source/meson.build ]] || {
+	printf 'initialize the sources/mesa submodule first\n' >&2
+	exit 2
+}
+source_version=$(tr -d '\n' < "$source/VERSION")
+[[ $source_version == "$version" ]] || {
+	printf 'pinned Mesa %s differs from host Mesa %s\n' "$source_version" "$version" >&2
+	exit 2
+}
+
+mkdir -p "$state" "$stage"
+options=(
+	--prefix=/usr --libdir=lib64 --buildtype=release
+	-Dgallium-drivers=virgl,softpipe -Dvulkan-drivers=
+	-Dplatforms=wayland -Dglx=disabled -Degl=enabled -Dgbm=enabled
+	-Dgles2=enabled -Dgallium-va=disabled -Dllvm=disabled
+)
+if [[ -f $build/build.ninja ]]; then
+	meson setup --reconfigure "$build" "$source" "${options[@]}"
+else
+	meson setup "$build" "$source" "${options[@]}"
+fi
+meson compile -C "$build" -j "$jobs"
+DESTDIR="$stage" meson install -C "$build" --no-rebuild --tags runtime
+mkdir -p "$stage/usr/lib/pronk-vm-mesa"
+printf 'MESA_REVISION=%s\nMESA_VERSION=%s\n' "$revision" "$version" > \
+	"$stage/usr/lib/pronk-vm-mesa/manifest"
+"$script_dir/check-mesa-stage" "$stage"
+printf 'PRONK_VM_MESA_STAGE=%s\n' "$stage"
