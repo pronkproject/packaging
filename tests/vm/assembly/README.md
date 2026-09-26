@@ -66,7 +66,7 @@ pattern through the guest virtio-gpu VA driver, and requires every output
 frame to decode on the host. It also sends red and blue RGB and NV12 images
 through VA postprocessing before encoding, then checks every decoded frame's
 center pixel. Those cases exercise conversion separately from direct encoder
-upload. It checks H.264 Main and High by default;
+upload. It checks H.264 Constrained Baseline, Main and High by default;
 `PRONK_VM_VIDEO_PROFILE` can select one profile while diagnosing a failure.
 The script confines the pinned QEMU and virglrenderer to that VM. When the
 host has a GBM render node, QEMU offers its video capability automatically.
