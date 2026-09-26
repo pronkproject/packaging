@@ -49,6 +49,20 @@ graphics stack on the host:
 tests/vm/assembly/build-mesa
 ```
 
+`run-virgl-import` checks a different graphics boundary without Mutter,
+Pronk, or CastKMS initialization. It first imports a virtio-owned GBM image,
+then asks virgl to import a system-heap DMA-BUF. The guest-only allocation
+must be rejected before a host command is submitted, and unrelated GL
+rendering must still produce the expected pixels. Set `PRONK_VM_MESA_STAGE`
+to the stage printed by `build-mesa`. The kernel image must contain the
+matching virtio-gpu blob-memory reporting fix:
+
+```sh
+PRONK_VM_KERNEL_IMAGE=/path/to/kernel-build/arch/x86/boot/bzImage \
+PRONK_VM_MESA_STAGE=/path/printed/by/build-mesa \
+tests/vm/assembly/run-virgl-import
+```
+
 Build the kernel and userspace stage first. The kernel image must correspond
 to the release recorded in the stage manifest. Build the Pronk
 `pronk-capture-mutter-media-live-test` and
