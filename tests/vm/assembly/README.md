@@ -56,6 +56,9 @@ to the release recorded in the stage manifest. Build the Pronk
 provide a Mutter build directory for its session test runner. The launcher
 checks the staged CastKMS, Pronk, and Mutter revisions against the source
 submodules. It uses the installed `virtme-run`, QEMU, and host EGL stack.
+Set `PRONK_VM_MESA_STAGE` to the `build-mesa` stage to overlay the pinned
+runtime in the full assembly test. The stage's source revision and Mesa
+version are checked before booting.
 
 For a GPU-only capture check, also build
 `pronk-capture-mutter-gpu-live-test` and set `PRONK_VM_TEST=gpu-capture` with
