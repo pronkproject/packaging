@@ -14,7 +14,7 @@ if test "${PRONK_VM_USE_PRONK_BIN:-0}" = 1; then
 	test_dir=/run/pronk-bin
 fi
 case ${PRONK_VM_TEST:-media} in
-media) test -x "$test_dir/pronk-capture-mutter-media-live-test" ;;
+media|media-gpu) test -x "$test_dir/pronk-capture-mutter-media-live-test" ;;
 gpu-capture) test -x "$test_dir/pronk-capture-mutter-gpu-live-test" ;;
 *) exit 2 ;;
 esac

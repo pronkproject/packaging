@@ -20,9 +20,17 @@ copy_mode=${PRONK_VM_COPY_MODE:-primary-gpu-cpu}
 use_mutter_build=${PRONK_VM_USE_MUTTER_BUILD:-0}
 use_fbos=${PRONK_VM_USE_FBOS:-auto}
 test_case=${PRONK_VM_TEST:-media}
+guest_memory=${PRONK_VM_MEMORY:-2G}
+if [[ $test_case == media-gpu ]]; then
+	copy_mode=${PRONK_VM_COPY_MODE:-zero-copy}
+	guest_memory=${PRONK_VM_MEMORY:-4G}
+fi
 pattern=${PRONK_VM_PATTERN:-gtk}
 renderer_build=${PRONK_VM_RENDERER_BUILD:-}
 use_renderer=${PRONK_VM_USE_RENDERER:-1}
+if [[ $test_case == media-gpu ]]; then
+	use_renderer=${PRONK_VM_USE_RENDERER:-0}
+fi
 pronk_bin_dir=${PRONK_VM_PRONK_BIN_DIR:-}
 mesa_stage=${PRONK_VM_MESA_STAGE:-}
 video_build=${PRONK_VM_VIDEO_BUILD:-}
@@ -30,11 +38,19 @@ drm_debug=${PRONK_VM_DRM_DEBUG:-0}
 gpu_device=${PRONK_VM_GPU_DEVICE:-virtio-gpu-gl-pci,blob=true,venus=true,hostmem=512M}
 pronk_source=$packaging_root/sources/pronk
 mutter_source=$packaging_root/sources/mutter
+gpu_media=0
 case $test_case in
-media) test_name=pronk-capture-mutter-media-live-test ;;
+media|media-gpu) test_name=pronk-capture-mutter-media-live-test ;;
 gpu-capture) test_name=pronk-capture-mutter-gpu-live-test ;;
 *) printf 'unsupported VM test: %s\n' "$test_case" >&2; exit 2 ;;
 esac
+if [[ $test_case == media-gpu ]]; then
+	gpu_media=1
+	[[ -n $video_build && -n $mesa_stage && $copy_mode != primary-gpu-cpu &&
+	   $use_renderer == 0 ]] || {
+		printf 'media-gpu requires a video VM build, Mesa stage, GPU Mutter copy, and no separate renderer daemon\n' >&2
+		exit 2
+	}
 fi
 test_binary=${pronk_bin_dir:-$pronk_source/target/debug}/$test_name
 log=$results/assembly.log
@@ -71,6 +87,10 @@ fi
 }
 [[ $use_renderer == 0 || $use_renderer == 1 ]] || {
 	printf 'PRONK_VM_USE_RENDERER must be 0 or 1\n' >&2
+	exit 2
+}
+[[ $guest_memory =~ ^[1-9][0-9]*G$ ]] || {
+	printf 'PRONK_VM_MEMORY must be a positive whole number of GiB\n' >&2
 	exit 2
 }
 if [[ $use_mutter_build == 1 && ! -f $mutter_build/src/libmutter-51.so.0.0.0 ]]; then
@@ -155,7 +175,10 @@ if [[ -n $video_build ]] &&
 	exit 1
 fi
 mkdir -p "$results"
-pattern_bin=
+pattern_bin=/run/pronk-source/target/debug/pronk-capture-pattern-client
+if [[ -n $pronk_bin_dir ]]; then
+	pattern_bin=/run/pronk-bin/pronk-capture-pattern-client
+fi
 if [[ $pattern == shm ]]; then
 	protocol=/usr/share/wayland-protocols/stable/xdg-shell/xdg-shell.xml
 	command -v wayland-scanner >/dev/null
@@ -182,8 +205,8 @@ fi
 	printf 'VIRGL_GBM_LAYOUT_ENABLE must be 0 or 1\n' >&2
 	exit 2
 }
-guest_command=$(printf 'PRONK_VM_COPY_MODE=%q PRONK_VM_RECEIVER=%q PRONK_VM_ALLOW_KERNEL_RELEASE_MISMATCH=%q PRONK_VM_USE_MUTTER_BUILD=%q PRONK_VM_USE_FBOS=%q PRONK_VM_TEST=%q PRONK_VM_USE_PRONK_BIN=%q PRONK_VM_USE_MESA_STAGE=%q PRONK_VM_MESA_LIBDIR=%q PRONK_VM_USE_RENDERER=%q PRONK_VM_USE_VIDEO=%q PRONK_PATTERN_BIN=%q sh /run/test/guest %q %q %q %q' \
-    "$copy_mode" "$receiver" "$allow_kernel_release_mismatch" "$use_mutter_build" "$use_fbos" "$test_case" "${pronk_bin_dir:+1}" "${mesa_stage:+1}" "${mesa_libdir:-}" "$use_renderer" "${video_build:+1}" "$pattern_bin" \
+guest_command=$(printf 'PRONK_VM_COPY_MODE=%q PRONK_VM_RECEIVER=%q PRONK_VM_ALLOW_KERNEL_RELEASE_MISMATCH=%q PRONK_VM_USE_MUTTER_BUILD=%q PRONK_VM_USE_FBOS=%q PRONK_VM_TEST=%q PRONK_VM_GPU_MEDIA=%q PRONK_VM_USE_PRONK_BIN=%q PRONK_VM_USE_MESA_STAGE=%q PRONK_VM_MESA_LIBDIR=%q PRONK_VM_USE_RENDERER=%q PRONK_VM_USE_VIDEO=%q PRONK_PATTERN_BIN=%q sh /run/test/guest %q %q %q %q' \
+    "$copy_mode" "$receiver" "$allow_kernel_release_mismatch" "$use_mutter_build" "$use_fbos" "$test_case" "$gpu_media" "${pronk_bin_dir:+1}" "${mesa_stage:+1}" "${mesa_libdir:-}" "$use_renderer" "${video_build:+1}" "$pattern_bin" \
 	"$crtc_id" "$connector_id" "$width" "$height")
 
 printf 'Host virgl GBM layout: %s\n' "$VIRGL_GBM_LAYOUT_ENABLE"
@@ -207,7 +230,7 @@ fi
 set +e
 nice -n 15 timeout 180s "$script_dir/virtme-egl-run" \
 	--force-9p --disable-microvm --mods auto --show-boot-console \
-	--kimg "$kernel_image" --memory 2G --cpus 4 --net user \
+	--kimg "$kernel_image" --memory "$guest_memory" --cpus 4 --net user \
 	"${qemu_args[@]}" \
 	--rwdir="/run/results=$results" \
 	--rodir="/run/kernel-build=$kernel_build" \
@@ -232,14 +255,20 @@ if ((status != 0)); then
 	exit "$status"
 fi
 case $test_case in
-media) pass='PASS: live Mutter scene through broker' ;;
+media|media-gpu) pass='PASS: live Mutter scene through broker' ;;
 gpu-capture) pass='PASS: changing nonblack Mutter pixels reached GPU-owned destinations' ;;
 esac
 grep -Fq "$pass" "$log" || {
 	tail -100 "$log" >&2
 	exit 1
 }
-if [[ $test_case == media && -n $receiver ]]; then
+if [[ $test_case == media-gpu ]]; then
+	grep -Fq 'PASS: GPU renderer, DMA-BUF PipeWire transport and VA H.264 encoder' "$log" || {
+		tail -100 "$log" >&2
+		exit 1
+	}
+fi
+if [[ ($test_case == media || $test_case == media-gpu) && -n $receiver ]]; then
 	grep -Fq 'PASS: receiver acknowledged the captured stream' "$log" || {
 		tail -100 "$log" >&2
 		exit 1

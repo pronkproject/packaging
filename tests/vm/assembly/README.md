@@ -109,10 +109,23 @@ the center pixel for nonblack content and a changing shade; the production
 capture path does not map pixels on the CPU. The probe does not encode video
 or contact a receiver. Run `run-gl-venus` separately to check a
 GLES-produced buffer's pixels after Venus import.
-The GPU capture test disconnects the virtio display by default so its
-fullscreen pattern appears on CastKMS rather than the other monitor.
-Set `PRONK_VM_DISABLE_VIRTIO_OUTPUT=0` to test an explicitly configured
-multiple-display layout.
+Both virtio-gpu and CastKMS call their first connector `Virtual-1`.
+Do not pass `video=Virtual-1:d`: it disables the CastKMS test output too.
+The guest retains both displays and the test checks the CastKMS target.
+
+For a full GPU media test, set `PRONK_VM_TEST=media-gpu` alongside the
+video-enabled Mesa stage and QEMU/virglrenderer build. The launcher selects
+Mutter's zero-copy path and leaves the separate renderer daemon stopped. The
+guest test issues its own administrative renderer endpoint, publishes a
+renderer configuration,
+waits for Mutter to select it, allocates GPU capture destinations, transports
+their DMA-BUFs through private PipeWire, and uses the selected virtio-gpu VA
+H.264 encoder. It verifies decoded changing pixels and the media graph's
+encoder, memory path, and render device. This probe uses test-only CPU
+decoding to check the encoded result; it does not copy raw capture frames to
+the CPU for encoding. Add `PRONK_VM_RECEIVER=HOST:PORT` only when a receiver
+may be interrupted. The test owns the selected renderer endpoint rather than
+sharing one with the installed daemon.
 
 `PRONK_VM_COPY_MODE=primary-gpu-gpu` is also accepted by the GPU capture
 probe to isolate Mutter's GPU copy from its direct import path.
@@ -148,9 +161,6 @@ the default `auto` tests Mutter's own policy.
 `PRONK_VM_PATTERN=shm` uses a direct Wayland shared-memory client to isolate
 Mutter's texture upload and rendering from GTK. In the media test it alternates
 the two gray values checked by the decoded-pixel oracle.
-`PRONK_VM_DISABLE_VIRTIO_OUTPUT=1` disconnects the guest's virtio display
-while retaining virtio GPU rendering. The media test leaves it connected by
-default.
 Set `PRONK_VM_DRM_DEBUG=0x1ff` when diagnosing a kernel DRM rejection; the
 default mask is `0`, and the guest's `dmesg` is saved as `kernel.log`.
 The guest requires the kernel release in the stage manifest to match its

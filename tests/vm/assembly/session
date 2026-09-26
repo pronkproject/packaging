@@ -95,7 +95,7 @@ done
 
 printf 'Assembly logs: %s\n' "$test_root"
 case ${PRONK_VM_TEST:-media} in
-media)
+media|media-gpu)
     set -- "$PRONK_VM_TEST_DIR/pronk-capture-mutter-media-live-test" \
         "$card" "$crtc_id" "$connector_id" "$width" "$height" \
         "$runtime/pipewire-0-pronk-backend"
