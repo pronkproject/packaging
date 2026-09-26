@@ -3,7 +3,7 @@ format_version = 1
 [components]
 pronk_commit = "49477ada898a2a19929d0a03c71c1ca77057da38"
 castkms_commit = "17fde518c0b20217d80992ff987df2959028da38"
-castkms_renderer_commit = "94c8ed1517c8052a38a31e6064a6bf9cfd469e52"
+castkms_renderer_commit = "18c1d51ae831f52ceff11774f991a852f53fda58"
 libdrm_commit = "050ba20132b0424d7b0238a8e164f6036663bd38"
 mesa_commit = "6ad9ee67f6e954dedb6a4a8de32f1d432346f4ef"
 mutter_commit = "f1303c9070ff5d31ce76e016c0fc0bfba403fe78"
