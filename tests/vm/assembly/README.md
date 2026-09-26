@@ -133,8 +133,11 @@ sharing one with the installed daemon.
 `PRONK_VM_VIDEO_RATE` selects 30 (default) or 60 frames per second for capture,
 encoding, and the receiver offer. With a receiver, the probe requires both
 encoded and acknowledged throughput to reach at least 95% of that rate during
-its observation window. Receiver acknowledgements do not establish how many
-distinct frames the television displays.
+its 15-second observation window. The window starts after a two-second warmup
+and the first receiver acknowledgement; the probe reports the excluded warmup
+separately and ends the window before stopping capture or media. Receiver
+acknowledgements do not establish how many distinct frames the television
+displays.
 
 `PRONK_VM_COPY_MODE=primary-gpu-gpu` is also accepted by the GPU capture
 probe to isolate Mutter's GPU copy from its direct import path.
