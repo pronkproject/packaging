@@ -1,7 +1,7 @@
 format_version = 1
 
 [components]
-pronk_commit = "f82869a61434a80a5818952fc8e68c7b911b055e"
+pronk_commit = "ab68eb42b74f1f720912fd4f45e2264ed4aaa6fb"
 castkms_commit = "17fde518c0b20217d80992ff987df2959028da38"
 castkms_renderer_commit = "18c1d51ae831f52ceff11774f991a852f53fda58"
 libdrm_commit = "050ba20132b0424d7b0238a8e164f6036663bd38"
