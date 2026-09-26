@@ -12,6 +12,7 @@ revision=$(git -C "$source" rev-parse HEAD)
 version=$(rpm -q --qf '%{VERSION}' mesa-dri-drivers)
 stage=$state/stages/$revision-$version
 jobs=${PRONK_VM_MESA_BUILD_JOBS:-2}
+drivers=virgl,zink,softpipe
 
 [[ $version =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]] || {
 	printf 'unsupported host Mesa version: %s\n' "$version" >&2
@@ -31,10 +32,11 @@ source_version=$(tr -d '\n' < "$source/VERSION")
 	exit 2
 }
 
-mkdir -p "$state" "$stage"
+mkdir -p "$state" "$stage/usr/lib/pronk-vm-mesa"
+rm -f -- "$stage/usr/lib/pronk-vm-mesa/manifest"
 options=(
 	--prefix=/usr --libdir=lib64 --buildtype=release
-	-Dgallium-drivers=virgl,softpipe -Dvulkan-drivers=
+	-Dgallium-drivers="$drivers" -Dvulkan-drivers=
 	-Dplatforms=wayland -Dglx=disabled -Degl=enabled -Dgbm=enabled
 	-Dgles2=enabled -Dgallium-va=disabled -Dllvm=disabled
 )
@@ -45,8 +47,8 @@ else
 fi
 meson compile -C "$build" -j "$jobs"
 DESTDIR="$stage" meson install -C "$build" --no-rebuild --tags runtime
-mkdir -p "$stage/usr/lib/pronk-vm-mesa"
-printf 'MESA_REVISION=%s\nMESA_VERSION=%s\n' "$revision" "$version" > \
+printf 'MESA_REVISION=%s\nMESA_VERSION=%s\nMESA_DRIVERS=%s\n' \
+	"$revision" "$version" "$drivers" > \
 	"$stage/usr/lib/pronk-vm-mesa/manifest"
 "$script_dir/check-mesa-stage" "$stage"
 printf 'PRONK_VM_MESA_STAGE=%s\n' "$stage"
