@@ -51,3 +51,6 @@
 	path = sources/accountsservice-compat
 	url = https://gitlab.freedesktop.org/accountsservice/accountsservice.git
 	branch = 23.13.9
+[submodule "sources/mesa"]
+	path = sources/mesa
+	url = https://github.com/pronkproject/mesa.git
