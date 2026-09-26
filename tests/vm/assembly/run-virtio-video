@@ -17,13 +17,13 @@ qemu_bin=$video_build/qemu/qemu-system-x86_64
 virgl_lib=$video_build/virglrenderer/src
 
 if [[ $profile == all ]]; then
-	for scenario in main high; do
+	for scenario in baseline main high; do
 		PRONK_VM_VIDEO_PROFILE=$scenario "$script_dir/run-virtio-video"
 	done
 	exit 0
 fi
-[[ $profile == main || $profile == high ]] || {
-	printf 'PRONK_VM_VIDEO_PROFILE must be all, main or high\n' >&2
+[[ $profile == baseline || $profile == main || $profile == high ]] || {
+	printf 'PRONK_VM_VIDEO_PROFILE must be all, baseline, main or high\n' >&2
 	exit 2
 }
 for value in "$width" "$height" "$frames"; do
@@ -92,6 +92,7 @@ check_bitstream() {
 		-show_entries stream=profile -of default=noprint_wrappers=1:nokey=1 \
 		"$output")
 	case $profile in
+		baseline) expected_profile='Constrained Baseline' ;;
 		main) expected_profile=Main ;;
 		high) expected_profile=High ;;
 	esac
