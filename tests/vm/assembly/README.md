@@ -42,8 +42,9 @@ front buffer (1 by default, at most 8).
 
 `build-mesa` builds the pinned Mesa source into a VM-only runtime stage. It
 checks that its version matches the host Mesa package and installs matching
-Gallium, GBM, and EGL libraries together. This avoids substituting a partial
-graphics stack on the host:
+Gallium, GBM, and EGL libraries together. The build includes virgl, Zink,
+and softpipe so it can also exercise the full GPU capture assembly. The
+stage stays separate from the host graphics stack:
 
 ```sh
 tests/vm/assembly/build-mesa
