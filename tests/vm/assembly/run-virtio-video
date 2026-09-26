@@ -112,3 +112,30 @@ check_bitstream() {
 }
 
 check_bitstream "$output"
+for format in BGRA NV12; do
+	for color in red blue; do
+		output=$results/$format-$color.h264
+		check_bitstream "$output"
+		# Decoding successfully does not establish that conversion preserves pixels.
+		samples=$(ffmpeg -v error -xerror -i "$output" \
+			-vf 'crop=2:2:(iw-2)/2:(ih-2)/2,scale=1:1,format=rgb24' \
+			-f rawvideo - | od -An -v -tu1)
+		read -r -a components <<< "${samples//$'\n'/ }"
+		(( ${#components[@]} == frames * 3 )) || {
+			printf 'missing decoded pixels in %s\n' "$output" >&2
+			exit 1
+		}
+		for ((i = 0; i < ${#components[@]}; i += 3)); do
+			r=${components[i]} g=${components[i + 1]} b=${components[i + 2]}
+			if [[ $color == red ]]; then
+				(( r >= 220 && g <= 35 && b <= 35 )) && continue
+			else
+				(( b >= 220 && r <= 35 && g <= 35 )) && continue
+			fi
+			printf '%s frame %d has RGB %s,%s,%s, expected %s\n' \
+				"$output" "$((i / 3))" "$r" "$g" "$b" "$color" >&2
+			exit 1
+		done
+	done
+done
+printf 'VA postprocessing preserves RGB and YUV colors with H.264 %s\n' "$profile"

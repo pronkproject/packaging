@@ -12,8 +12,19 @@ frames=$5
 export LIBVA_DRIVER_NAME=virtio_gpu
 export LIBVA_DRIVERS_PATH=/run/mesa-stage/$mesa_libdir/dri
 export LD_LIBRARY_PATH=/run/mesa-stage/$mesa_libdir:/usr/lib64
+export GST_REGISTRY=/run/results/gst-registry.bin
 
 ffmpeg -hide_banner -loglevel warning -vaapi_device /dev/dri/renderD128 \
 	-f lavfi -i "testsrc2=size=${width}x${height}:rate=30" -frames:v "$frames" \
 	-vf format=nv12,hwupload -c:v h264_vaapi -profile:v "$profile" \
 	-y /run/results/encoded.h264
+
+for format in BGRA NV12; do
+	for color in red blue; do
+		gst-launch-1.0 -e videotestsrc num-buffers="$frames" pattern="$color" ! \
+			"video/x-raw,format=$format,width=$width,height=$height,framerate=30/1" ! \
+			vapostproc ! 'video/x-raw(memory:VAMemory),format=NV12' ! \
+			vah264enc ! "video/x-h264,profile=$profile" ! h264parse ! \
+			filesink location="/run/results/$format-$color.h264"
+	done
+done
