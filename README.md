@@ -15,6 +15,9 @@ libgnome-volume-control, and libgxdp submodules supply content omitted from
 GitLab-generated source archives. The CastKMS submodule pins the complete
 kernel source that supplies both the driver and its DRM infrastructure; it is
 not an out-of-tree module source.
+The Mesa submodule pins the virgl change that rejects guest-only DMA-BUF
+imports before they reach the host renderer. It is used by the VM graphics
+tests; the normal system extension does not replace the host Mesa stack.
 
 ## Development system extension
 
