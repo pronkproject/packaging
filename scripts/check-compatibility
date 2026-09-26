@@ -94,6 +94,7 @@ repositories = {
     "castkms_commit": root / "sources/castkms",
     "castkms_renderer_commit": root / "sources/castkms-renderer",
     "libdrm_commit": root / "sources/libdrm",
+    "mesa_commit": root / "sources/mesa",
     "mutter_commit": root / "sources/mutter",
     "gnome_control_center_commit": root / "sources/gnome-control-center",
     "wireplumber_commit": root / "sources/wireplumber",
