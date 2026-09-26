@@ -139,6 +139,18 @@ separately and ends the window before stopping capture or media. Receiver
 acknowledgements do not establish how many distinct frames the television
 displays.
 
+For an interactive guest desktop, use the same GPU media assembly with
+`PRONK_VM_INTERACTIVE=1` and a receiver. The guest starts GNOME Shell rather
+than the finite test pattern, and casting continues until the launcher is
+stopped. QEMU keeps the EGL graphics backend used by the video test and serves
+the guest's local display over VNC on `127.0.0.1:5901`. Open
+`vncviewer localhost:1` on the host to control the guest with the mouse and
+keyboard; closing the viewer does not stop the cast. The VNC listener is not
+exposed on the network. From another machine, forward port 5901 over SSH
+before connecting a viewer. The CastKMS display remains a separate guest
+monitor, so the VNC window and receiver show different parts of the desktop
+unless the guest's display arrangement is changed.
+
 `PRONK_VM_COPY_MODE=primary-gpu-gpu` is also accepted by the GPU capture
 probe to isolate Mutter's GPU copy from its direct import path.
 

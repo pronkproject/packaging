@@ -65,6 +65,12 @@ export MUTTER_DEBUG_KMS_THREAD_TYPE=user
 export MUTTER_DEBUG_USE_KMS_MODIFIERS=1
 export MUTTER_DEBUG=kms
 export GSETTINGS_SCHEMA_DIR=/usr/share/glib-2.0/schemas
+if test "${PRONK_VM_INTERACTIVE:-0}" = 1; then
+	mkdir -p /run/pronk-schemas
+	cp -a /usr/share/glib-2.0/schemas/. /run/pronk-schemas/
+	glib-compile-schemas /run/pronk-schemas
+	export GSETTINGS_SCHEMA_DIR=/run/pronk-schemas
+fi
 export LD_LIBRARY_PATH=/usr/lib64/mutter-51
 if test "${PRONK_VM_USE_MUTTER_BUILD:-0}" = 1; then
 	test -f /run/mutter-build/src/libmutter-51.so.0.0.0

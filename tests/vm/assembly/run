@@ -20,6 +20,7 @@ copy_mode=${PRONK_VM_COPY_MODE:-primary-gpu-cpu}
 use_mutter_build=${PRONK_VM_USE_MUTTER_BUILD:-0}
 use_fbos=${PRONK_VM_USE_FBOS:-auto}
 test_case=${PRONK_VM_TEST:-media}
+interactive=${PRONK_VM_INTERACTIVE:-0}
 guest_memory=${PRONK_VM_MEMORY:-2G}
 video_rate=${PRONK_VM_VIDEO_RATE:-30}
 [[ $video_rate == 30 || $video_rate == 60 ]] || {
@@ -29,6 +30,14 @@ video_rate=${PRONK_VM_VIDEO_RATE:-30}
 if [[ $test_case == media-gpu ]]; then
 	copy_mode=${PRONK_VM_COPY_MODE:-zero-copy}
 	guest_memory=${PRONK_VM_MEMORY:-4G}
+fi
+[[ $interactive == 0 || $interactive == 1 ]] || {
+	printf 'PRONK_VM_INTERACTIVE must be 0 or 1\n' >&2
+	exit 2
+}
+if [[ $interactive == 1 && ($test_case != media-gpu || -z $receiver) ]]; then
+	printf 'interactive VM casting requires media-gpu and a receiver\n' >&2
+	exit 2
 fi
 pattern=${PRONK_VM_PATTERN:-gtk}
 renderer_build=${PRONK_VM_RENDERER_BUILD:-}
@@ -210,8 +219,8 @@ fi
 	printf 'VIRGL_GBM_LAYOUT_ENABLE must be 0 or 1\n' >&2
 	exit 2
 }
-guest_command=$(printf 'PRONK_VM_COPY_MODE=%q PRONK_VM_RECEIVER=%q PRONK_VM_ALLOW_KERNEL_RELEASE_MISMATCH=%q PRONK_VM_USE_MUTTER_BUILD=%q PRONK_VM_USE_FBOS=%q PRONK_VM_TEST=%q PRONK_VM_GPU_MEDIA=%q PRONK_VM_USE_PRONK_BIN=%q PRONK_VM_USE_MESA_STAGE=%q PRONK_VM_MESA_LIBDIR=%q PRONK_VM_USE_RENDERER=%q PRONK_VM_USE_VIDEO=%q PRONK_VM_VIDEO_RATE=%q PRONK_PATTERN_BIN=%q sh /run/test/guest %q %q %q %q' \
-    "$copy_mode" "$receiver" "$allow_kernel_release_mismatch" "$use_mutter_build" "$use_fbos" "$test_case" "$gpu_media" "${pronk_bin_dir:+1}" "${mesa_stage:+1}" "${mesa_libdir:-}" "$use_renderer" "${video_build:+1}" "$video_rate" "$pattern_bin" \
+guest_command=$(printf 'PRONK_VM_COPY_MODE=%q PRONK_VM_RECEIVER=%q PRONK_VM_ALLOW_KERNEL_RELEASE_MISMATCH=%q PRONK_VM_USE_MUTTER_BUILD=%q PRONK_VM_USE_FBOS=%q PRONK_VM_TEST=%q PRONK_VM_GPU_MEDIA=%q PRONK_VM_USE_PRONK_BIN=%q PRONK_VM_USE_MESA_STAGE=%q PRONK_VM_MESA_LIBDIR=%q PRONK_VM_USE_RENDERER=%q PRONK_VM_USE_VIDEO=%q PRONK_VM_VIDEO_RATE=%q PRONK_VM_INTERACTIVE=%q PRONK_VM_CLUTTER_PAINT=%q PRONK_PATTERN_BIN=%q sh /run/test/guest %q %q %q %q' \
+    "$copy_mode" "$receiver" "$allow_kernel_release_mismatch" "$use_mutter_build" "$use_fbos" "$test_case" "$gpu_media" "${pronk_bin_dir:+1}" "${mesa_stage:+1}" "${mesa_libdir:-}" "$use_renderer" "${video_build:+1}" "$video_rate" "$interactive" "${PRONK_VM_CLUTTER_PAINT:-}" "$pattern_bin" \
 	"$crtc_id" "$connector_id" "$width" "$height")
 
 printf 'Host virgl GBM layout: %s\n' "$VIRGL_GBM_LAYOUT_ENABLE"
@@ -233,7 +242,17 @@ if [[ -n $mesa_stage ]]; then
 	mesa_mount+=("--rodir=/run/mesa-stage=$mesa_stage")
 fi
 set +e
-nice -n 15 timeout 180s "$script_dir/virtme-egl-run" \
+vm_command=(nice -n 15)
+if [[ $interactive == 0 ]]; then
+	vm_command+=(timeout 180s)
+fi
+display=egl-headless,gl=on
+vnc_args=()
+if [[ $interactive == 1 ]]; then
+	vnc_args+=(-q=-L -q="$packaging_root/sources/qemu/pc-bios" -q=-vnc -q=127.0.0.1:1)
+	printf 'Guest desktop VNC: localhost:5901\n'
+fi
+"${vm_command[@]}" "$script_dir/virtme-egl-run" \
 	--force-9p --disable-microvm --mods auto --show-boot-console \
 	--kimg "$kernel_image" --memory "$guest_memory" --cpus 4 --net user \
 	"${qemu_args[@]}" \
@@ -249,7 +268,8 @@ nice -n 15 timeout 180s "$script_dir/virtme-egl-run" \
 	--rodir="/run/test=$script_dir" \
 	-a kunit.enable=0 -a vkms.create_default_dev=0 -a "drm.debug=$drm_debug" \
 	-q=-device -q="$gpu_device" \
-	-q=-display -q=egl-headless,gl=on \
+	-q=-display -q="$display" \
+	"${vnc_args[@]}" \
 	--script-sh "$guest_command" >>"$log" 2>&1
 status=$?
 set -e
@@ -258,6 +278,10 @@ printf '\nHost virgl GBM layout: %s\nMutter copy mode: %s\nReceiver: %s\n' \
 if ((status != 0)); then
 	tail -100 "$log" >&2
 	exit "$status"
+fi
+if [[ $interactive == 1 ]]; then
+	printf 'Interactive guest session ended\n'
+	exit 0
 fi
 case $test_case in
 media|media-gpu) pass='PASS: live Mutter scene through broker' ;;

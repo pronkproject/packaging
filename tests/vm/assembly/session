@@ -45,13 +45,24 @@ export XDG_RUNTIME_DIR=$runtime
 export PIPEWIRE_RUNTIME_DIR=$runtime
 export GST_REGISTRY=$test_root/gst-registry.bin
 export GST_DEBUG=2
-export G_DEBUG=fatal-criticals
+if test -n "${PRONK_VM_CLUTTER_PAINT:-}"; then
+	export CLUTTER_PAINT=$PRONK_VM_CLUTTER_PAINT
+fi
+if test "${PRONK_VM_INTERACTIVE:-0}" = 1; then
+	unset G_DEBUG
+else
+	export G_DEBUG=fatal-criticals
+fi
 export WIREPLUMBER_CONFIG_DIR="$config/wireplumber:/usr/share/wireplumber"
 export WIREPLUMBER_DATA_DIR="$data/wireplumber:/usr/share/wireplumber"
 
-/usr/bin/mutter --wayland --display-server --no-x11 \
-	--mutter-plugin=/usr/lib64/mutter-51/plugins/libdefault.so \
-	>"$test_root/mutter.log" 2>&1 &
+if test "${PRONK_VM_INTERACTIVE:-0}" = 1; then
+	/usr/bin/gnome-shell --wayland --no-x11 >"$test_root/mutter.log" 2>&1 &
+else
+	/usr/bin/mutter --wayland --display-server --no-x11 \
+		--mutter-plugin=/usr/lib64/mutter-51/plugins/libdefault.so \
+		>"$test_root/mutter.log" 2>&1 &
+fi
 compositor_pid=$!
 attempt=0
 until gdbus call --session --dest org.gnome.Mutter.DisplayConfig \
@@ -109,6 +120,18 @@ gpu-capture)
     ;;
 *) exit 2 ;;
 esac
+if test "${PRONK_VM_INTERACTIVE:-0}" = 1; then
+	RUST_LOG=debug RUST_BACKTRACE=1 "$@" >"$test_root/client.log" 2>&1 &
+	client_pid=$!
+	printf 'Interactive desktop cast running; stop the VM launcher to end it.\n'
+	if wait "$client_pid"; then
+		cat "$test_root/client.log"
+		exit 0
+	fi
+	tail -150 "$test_root/client.log" >&2
+	tail -150 "$test_root/mutter.log" >&2
+	exit 1
+fi
 if RUST_LOG=debug RUST_BACKTRACE=1 \
 	timeout --signal=TERM --kill-after=5 90 "$@" \
 	>"$test_root/client.log" 2>&1; then

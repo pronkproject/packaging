@@ -42,11 +42,11 @@ if [[ ! -f $qemu_build/build.ninja ]]; then
 			"$qemu_source/configure" --target-list=x86_64-softmmu \
 			--enable-virglrenderer --enable-opengl --disable-docs \
 			--enable-slirp \
-			--disable-gtk --disable-sdl --disable-vnc \
+			--disable-gtk --disable-sdl --enable-vnc \
 			--disable-tools --disable-user
 	)
 else
-	meson configure "$qemu_build" -Dslirp=enabled
+	meson configure "$qemu_build" -Dslirp=enabled -Dvnc=enabled
 fi
 meson compile -C "$qemu_build" -j "$jobs" qemu-system-x86_64
 
