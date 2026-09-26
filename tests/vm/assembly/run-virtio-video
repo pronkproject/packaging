@@ -84,26 +84,31 @@ if (( status != 0 )); then
 	exit "$status"
 fi
 
-[[ -s $output ]] || { printf 'guest did not produce a bitstream\n' >&2; exit 1; }
-ffmpeg -v error -xerror -i "$output" -f null -
-reported_profile=$(ffprobe -v error -select_streams v:0 \
-	-show_entries stream=profile -of default=noprint_wrappers=1:nokey=1 \
-	"$output")
-case $profile in
-	main) expected_profile=Main ;;
-	high) expected_profile=High ;;
-esac
-[[ $reported_profile == "$expected_profile" ]] || {
-	printf 'encoded profile is %s, expected %s\n' \
-		"$reported_profile" "$expected_profile" >&2
-	exit 1
+check_bitstream() {
+	local output=$1 reported_profile expected_profile decoded
+	[[ -s $output ]] || { printf 'guest did not produce %s\n' "$output" >&2; exit 1; }
+	ffmpeg -v error -xerror -i "$output" -f null -
+	reported_profile=$(ffprobe -v error -select_streams v:0 \
+		-show_entries stream=profile -of default=noprint_wrappers=1:nokey=1 \
+		"$output")
+	case $profile in
+		main) expected_profile=Main ;;
+		high) expected_profile=High ;;
+	esac
+	[[ $reported_profile == "$expected_profile" ]] || {
+		printf 'encoded profile is %s, expected %s\n' \
+			"$reported_profile" "$expected_profile" >&2
+		exit 1
+	}
+	decoded=$(ffprobe -v error -select_streams v:0 -count_frames \
+		-show_entries stream=nb_read_frames -of default=noprint_wrappers=1:nokey=1 \
+		"$output")
+	[[ $decoded == "$frames" ]] || {
+		printf 'decoded %s of %s frames\n' "$decoded" "$frames" >&2
+		exit 1
+	}
+	printf 'Decoded %s %s frames at %sx%s from %s\n' \
+		"$frames" "$profile" "$width" "$height" "$output"
 }
-decoded=$(ffprobe -v error -select_streams v:0 -count_frames \
-	-show_entries stream=nb_read_frames -of default=noprint_wrappers=1:nokey=1 \
-	"$output")
-[[ $decoded == "$frames" ]] || {
-	printf 'decoded %s of %s frames\n' "$decoded" "$frames" >&2
-	exit 1
-}
-printf 'Decoded %s %s frames at %sx%s from %s\n' \
-	"$frames" "$profile" "$width" "$height" "$output"
+
+check_bitstream "$output"
