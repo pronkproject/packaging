@@ -1,0 +1,60 @@
+#!/usr/bin/env bash
+# SPDX-License-Identifier: GPL-2.0-or-later
+
+set -euo pipefail
+
+script_dir=$(CDPATH='' cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd -P)
+kernel_image=${PRONK_VM_KERNEL_IMAGE:?set PRONK_VM_KERNEL_IMAGE to a CastKMS bzImage}
+stage=${PRONK_VM_MESA_STAGE:-}
+results_root=${PRONK_VM_RESULTS:-${XDG_STATE_HOME:-$HOME/.local/state}/pronk-vm-results}
+[[ -f $kernel_image ]] || { printf 'kernel image is missing\n' >&2; exit 2; }
+[[ -n $stage ]] || {
+	printf 'set PRONK_VM_MESA_STAGE to the stage printed by build-mesa\n' >&2
+	exit 2
+}
+mesa_libdir=$("$script_dir/check-mesa-stage" --libdir "$stage")
+if pgrep -f '^/usr/bin/qemu-system-|^qemu-system-' >/dev/null; then
+	printf 'another QEMU VM is active\n' >&2
+	exit 1
+fi
+
+mkdir -p "$results_root"
+results=$(mktemp -d "$results_root/virgl-import.XXXXXXXX")
+cc -std=c11 -Wall -Wextra -Werror -O2 \
+	"$script_dir/virgl-foreign-import.c" -o "$results/virgl-foreign-import" \
+	$(pkg-config --cflags --libs egl glesv2 gbm libdrm)
+
+mesa_gbm_path=/usr/lib64/gbm
+if [[ -f $stage/$mesa_libdir/gbm/dri_gbm.so ]]; then
+	mesa_gbm_path=/run/mesa-stage/$mesa_libdir/gbm
+fi
+mesa_library_path=/run/mesa-stage/$mesa_libdir:/usr/lib64
+guest_command=$(printf 'test ! -d /sys/devices/faux/castkms && udevadm settle && LD_LIBRARY_PATH=%q GBM_BACKENDS_PATH=%q /run/results/virgl-foreign-import > /run/results/probe.log 2>&1; result=$?; dmesg > /run/results/kernel.log; exit "$result"' \
+	"$mesa_library_path" "$mesa_gbm_path")
+
+export VIRGL_GBM_LAYOUT_ENABLE=1
+printf 'Virgl import results: %s\n' "$results"
+set +e
+nice -n 15 timeout 90s "$script_dir/virtme-egl-run" \
+	--force-9p --disable-microvm --mods auto --show-boot-console \
+	--kimg "$kernel_image" --memory 2G --cpus 4 \
+	--rwdir="/run/results=$results" \
+	--rodir="/run/mesa-stage=$stage" \
+	-a kunit.enable=0 -a vkms.create_default_dev=0 \
+	-a initcall_blacklist=__castkms_init \
+	-q=-device -q=virtio-gpu-gl-pci,blob=true,venus=true,hostmem=512M \
+	-q=-display -q=egl-headless,gl=on \
+	--script-sh "$guest_command" >"$results/boot.log" 2>&1
+status=$?
+set -e
+sed -n '1,100p' "$results/probe.log" 2>/dev/null || :
+if grep -Eq 'Illegal|RESOURCE_LAYOUT|context error' "$results/boot.log"; then
+	printf 'host virgl rejected a submitted resource\n' >&2
+	exit 1
+fi
+if ((status != 0)); then
+	tail -60 "$results/boot.log" >&2
+	exit "$status"
+fi
+grep -Fq 'expected=197 pixel=197,197,197,255' "$results/probe.log"
+printf 'PASS: guest-only import was rejected without damaging GL rendering\n'
