@@ -41,17 +41,25 @@ if [[ ! -f $qemu_build/build.ninja ]]; then
 		PKG_CONFIG_PATH="$virgl_build/meson-uninstalled${PKG_CONFIG_PATH:+:$PKG_CONFIG_PATH}" \
 			"$qemu_source/configure" --target-list=x86_64-softmmu \
 			--enable-virglrenderer --enable-opengl --disable-docs \
+			--enable-slirp \
 			--disable-gtk --disable-sdl --disable-vnc \
 			--disable-tools --disable-user
 	)
+else
+	meson configure "$qemu_build" -Dslirp=enabled
 fi
 meson compile -C "$qemu_build" -j "$jobs" qemu-system-x86_64
 
 [[ -x $qemu_build/qemu-system-x86_64 &&
-   -f $virgl_build/src/libvirglrenderer.so.1 ]] || {
+   -f $virgl_build/src/libvirglrenderer.so.1 &&
+   -x $virgl_build/server/virgl_render_server ]] || {
 	printf 'video VM build is incomplete\n' >&2
 	exit 1
 }
+if ! "$qemu_build/qemu-system-x86_64" -netdev help | grep -Eq '^user([[:space:]]|$)'; then
+	printf 'video VM QEMU lacks user-mode networking\n' >&2
+	exit 1
+fi
 printf 'QEMU_REVISION=%s\nVIRGLRENDERER_REVISION=%s\n' \
 	"$qemu_revision" "$virgl_revision" > "$build/manifest"
 printf 'PRONK_VM_VIDEO_BUILD=%s\n' "$build"
