@@ -117,6 +117,8 @@ else
 	result=$?
 	tail -150 "$test_root/client.log" >&2
 	tail -150 "$test_root/mutter.log" >&2
-	tail -150 /run/results/renderer.log >&2
+	if test -f /run/results/renderer.log; then
+		tail -150 /run/results/renderer.log >&2
+	fi
 	exit "$result"
 fi
