@@ -1,0 +1,40 @@
+#!/usr/bin/env bash
+# SPDX-License-Identifier: GPL-2.0-or-later
+
+set -euo pipefail
+
+script_dir=$(CDPATH='' cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd -P)
+packaging_root=$(CDPATH='' cd -- "$script_dir/../../.." && pwd -P)
+mode=check
+if [[ ${1:-} == --libdir ]]; then
+	mode=libdir
+	shift
+fi
+[[ $# == 1 ]] || { printf 'usage: %s [--libdir] STAGE\n' "$0" >&2; exit 2; }
+stage=$1
+manifest=$stage/usr/lib/pronk-vm-mesa/manifest
+revision=$(git -C "$packaging_root/sources/mesa" rev-parse HEAD)
+version=$(rpm -q --qf '%{VERSION}' mesa-dri-drivers)
+
+[[ -f $manifest ]] || { printf 'Mesa VM stage has no manifest: %s\n' "$stage" >&2; exit 2; }
+grep -Fqx "MESA_REVISION=$revision" "$manifest" || {
+	printf 'Mesa VM stage source revision differs from the packaging pin\n' >&2
+	exit 2
+}
+grep -Fqx "MESA_VERSION=$version" "$manifest" || {
+	printf 'Mesa VM stage version differs from the host Mesa package\n' >&2
+	exit 2
+}
+libdir=usr/lib64
+if [[ ! -f $stage/$libdir/libgallium-$version.so ]]; then
+	libdir=usr/local/lib64
+fi
+for file in "libgallium-$version.so" libgbm.so.1 libEGL_mesa.so.0 gbm/dri_gbm.so; do
+	[[ -f $stage/$libdir/$file ]] || {
+		printf 'Mesa VM stage is missing %s\n' "$file" >&2
+		exit 2
+	}
+done
+if [[ $mode == libdir ]]; then
+	printf '%s\n' "$libdir"
+fi
