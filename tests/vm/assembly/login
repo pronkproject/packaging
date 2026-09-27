@@ -1,0 +1,61 @@
+#!/bin/sh
+# SPDX-License-Identifier: GPL-2.0-or-later
+
+set -eu
+
+test_root=$(mktemp -d /run/results/login.XXXXXXXX)
+runtime=/run/user/0
+mkdir -p /run/pronk-vm/home
+mount --bind /run/pronk-vm/home /root
+systemctl stop kmsconvt@tty1.service getty@tty1.service 2>/dev/null || :
+
+env DBUS_SYSTEM_BUS_ADDRESS=unix:path=/run/dbus/system_bus_socket \
+	systemd-run --quiet --no-block --unit=pronk-vm-login \
+	-p PAMName=login -p User=root \
+	-E XDG_SESSION_TYPE=wayland \
+	-E XDG_SESSION_CLASS=user \
+	-E XDG_SEAT=seat0 -E XDG_VTNR=1 \
+	-E XDG_RUNTIME_DIR="$runtime" \
+	-E DBUS_SESSION_BUS_ADDRESS="unix:path=$runtime/bus" \
+	-E LD_LIBRARY_PATH="$LD_LIBRARY_PATH" \
+	-E GBM_BACKENDS_PATH="$GBM_BACKENDS_PATH" \
+	-E VK_DRIVER_FILES="$VK_DRIVER_FILES" \
+	-E GSETTINGS_SCHEMA_DIR="$GSETTINGS_SCHEMA_DIR" \
+	-E MUTTER_DEBUG_MULTI_GPU_FORCE_COPY_MODE="$MUTTER_DEBUG_MULTI_GPU_FORCE_COPY_MODE" \
+	-E MUTTER_DEBUG_USE_KMS_MODIFIERS=1 \
+	-E PRONK_VM_LOGIN_LOG="$test_root/shell.log" \
+	/bin/sh -c 'exec /usr/bin/gnome-shell --wayland --display-server --no-x11 >"$PRONK_VM_LOGIN_LOG" 2>&1'
+
+attempt=0
+until test -S "$runtime/bus" &&
+	DBUS_SESSION_BUS_ADDRESS="unix:path=$runtime/bus" \
+		gdbus call --session --dest org.gnome.Mutter.DisplayConfig \
+		--object-path /org/gnome/Mutter/DisplayConfig \
+		--method org.gnome.Mutter.DisplayConfig.GetCurrentState \
+		>/dev/null 2>&1; do
+	attempt=$((attempt + 1))
+	if systemctl is-failed --quiet pronk-vm-login.service ||
+	   test "$attempt" -ge 400; then
+		tail -150 "$test_root/shell.log" >&2 || :
+		systemctl status --no-pager pronk-vm-login.service >&2 || :
+		journalctl --no-pager -u pronk-vm-login.service -n 150 >&2 || :
+		exit 1
+	fi
+	sleep 0.1
+done
+
+mkdir -p "$runtime/systemd/user/pronk.service.d" \
+	"$runtime/systemd/user/pronk-chromiacast@.service.d"
+install -m 0644 /run/test/pronk.service.conf \
+	"$runtime/systemd/user/pronk.service.d/vm.conf"
+install -m 0644 /run/test/pronk-chromiacast.service.conf \
+	"$runtime/systemd/user/pronk-chromiacast@.service.d/vm.conf"
+
+export DBUS_SESSION_BUS_ADDRESS="unix:path=$runtime/bus"
+export XDG_RUNTIME_DIR="$runtime"
+systemctl --user import-environment \
+	LD_LIBRARY_PATH GBM_BACKENDS_PATH VK_DRIVER_FILES \
+	LIBVA_DRIVER_NAME LIBVA_DRIVERS_PATH \
+	MUTTER_DEBUG_MULTI_GPU_FORCE_COPY_MODE
+export PRONK_VM_ASSEMBLY_ROOT="$test_root"
+sh /run/test/service >"$test_root/service.log" 2>&1

@@ -119,6 +119,12 @@ if test "${PRONK_VM_USE_RENDERER:-1}" = 1; then
 	trap 'kill "$renderer_pid" 2>/dev/null || :; wait "$renderer_pid" 2>/dev/null || :' EXIT
 fi
 
+if test "${PRONK_VM_TEST:-}" = service-gpu &&
+   test "${PRONK_VM_INTERACTIVE:-0}" = 1; then
+	sh /run/test/login
+	exit $?
+fi
+
 cd /run/mutter-source
 export G_TEST_SRCDIR=$PWD/src/tests
 export G_TEST_BUILDDIR=/run/mutter-build/src/tests

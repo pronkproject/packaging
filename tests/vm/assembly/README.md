@@ -156,9 +156,10 @@ displays.
 
 For an interactive guest desktop, use `PRONK_VM_TEST=service-gpu` with
 `PRONK_VM_INTERACTIVE=1` and a receiver. The guest starts GNOME Shell rather
-than the finite test pattern, and casting continues until the launcher is
-stopped. QEMU keeps the EGL graphics backend used by the video test and serves
-the guest's local display over VNC on `127.0.0.1:5901`. Open
+than the finite test pattern inside a guest-only PAM/logind session. It stops
+the guest's virtual console before Shell takes the virtio DRM device; casting
+continues until the launcher is stopped. QEMU serves the guest's local display
+over VNC on `127.0.0.1:5901`. Open
 `vncviewer localhost:1` on the host to control the guest with the mouse and
 keyboard; closing the viewer does not stop the cast. The VNC listener is not
 exposed on the network. From another machine, forward port 5901 over SSH
