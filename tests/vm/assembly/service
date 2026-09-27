@@ -107,36 +107,6 @@ apply_route()
 	gdctl set "$@"
 }
 
-cast_mode_is_current()
-{
-	gdctl show | awk -v connector="$cast_connector" '
-		/Monitor / {
-			selected = index($0, "Monitor " connector " (") != 0
-		}
-		selected && /1280x720@60[.]000/ {
-			found = 1
-		}
-		END {
-			exit !found
-		}'
-}
-
-watch_display_configuration()
-{
-	gdbus monitor --session --dest org.gnome.Mutter.DisplayConfig \
-		--object-path /org/gnome/Mutter/DisplayConfig |
-	while IFS= read -r event; do
-		case $event in
-		*MonitorsChanged*)
-			if ! cast_mode_is_current; then
-				printf 'Restoring the interactive guest TV mode after a monitor change\n'
-				apply_route 1280x720@60.000 || :
-			fi
-			;;
-		esac
-	done
-}
-
 apply_route 1280x720@60.000
 attempt=0
 until displays=$(/usr/bin/pronkctl list-displays) &&
@@ -163,7 +133,6 @@ until displays=$(/usr/bin/pronkctl list-displays) &&
 done
 if test "${PRONK_VM_INTERACTIVE:-0}" = 1; then
 	printf 'PASS: installed Pronk services are streaming the interactive desktop\n'
-	watch_display_configuration &
 	if test -n "${PRONK_VM_BROWSER_URL:-}"; then
 		XDG_SESSION_TYPE=wayland WAYLAND_DISPLAY=wayland-0 \
 			MOZ_ENABLE_WAYLAND=1 /usr/bin/firefox --new-window "$PRONK_VM_BROWSER_URL" \
