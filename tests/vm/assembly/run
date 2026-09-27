@@ -27,7 +27,7 @@ video_rate=${PRONK_VM_VIDEO_RATE:-30}
 	printf 'PRONK_VM_VIDEO_RATE must be 30 or 60\n' >&2
 	exit 2
 }
-if [[ $test_case == media-gpu ]]; then
+if [[ $test_case == media-gpu || $test_case == service-gpu ]]; then
 	copy_mode=${PRONK_VM_COPY_MODE:-zero-copy}
 	guest_memory=${PRONK_VM_MEMORY:-4G}
 fi
@@ -35,8 +35,12 @@ fi
 	printf 'PRONK_VM_INTERACTIVE must be 0 or 1\n' >&2
 	exit 2
 }
-if [[ $interactive == 1 && ($test_case != media-gpu || -z $receiver) ]]; then
-	printf 'interactive VM casting requires media-gpu and a receiver\n' >&2
+if [[ $interactive == 1 && ($test_case != media-gpu && $test_case != service-gpu || -z $receiver) ]]; then
+	printf 'interactive VM casting requires a GPU media test and a receiver\n' >&2
+	exit 2
+fi
+if [[ $test_case == service-gpu && -z $receiver ]]; then
+	printf 'service-gpu requires a receiver\n' >&2
 	exit 2
 fi
 pattern=${PRONK_VM_PATTERN:-gtk}
@@ -56,9 +60,10 @@ gpu_media=0
 case $test_case in
 media|media-gpu) test_name=pronk-capture-mutter-media-live-test ;;
 gpu-capture) test_name=pronk-capture-mutter-gpu-live-test ;;
+service-gpu) test_name=pronkd ;;
 *) printf 'unsupported VM test: %s\n' "$test_case" >&2; exit 2 ;;
 esac
-if [[ $test_case == media-gpu ]]; then
+if [[ $test_case == media-gpu || $test_case == service-gpu ]]; then
 	gpu_media=1
 	[[ -n $video_build && -n $mesa_stage && $copy_mode != primary-gpu-cpu &&
 	   $use_renderer == 1 ]] || {
@@ -67,6 +72,9 @@ if [[ $test_case == media-gpu ]]; then
 	}
 fi
 test_binary=${pronk_bin_dir:-$pronk_source/target/debug}/$test_name
+if [[ $test_case == service-gpu ]]; then
+	test_binary=$stage/usr/bin/pronkd
+fi
 log=$results/assembly.log
 
 for value in "$crtc_id" "$connector_id" "$width" "$height"; do
@@ -115,7 +123,7 @@ if [[ -n $renderer_build && ! -x $renderer_build/castkms-rendererd ]]; then
 	printf 'renderer build executable is missing\n' >&2
 	exit 2
 fi
-if [[ -n $pronk_bin_dir && ! -x $pronk_bin_dir/pronk-capture-pattern-client ]]; then
+if [[ -n $pronk_bin_dir && $test_case != service-gpu && ! -x $pronk_bin_dir/pronk-capture-pattern-client ]]; then
 	printf 'Pronk pattern client is missing from the alternate binary directory\n' >&2
 	exit 2
 fi
@@ -246,6 +254,10 @@ vm_command=(nice -n 15)
 if [[ $interactive == 0 ]]; then
 	vm_command+=(timeout 180s)
 fi
+systemd_args=()
+if [[ $test_case == service-gpu ]]; then
+	systemd_args+=(--systemd -a systemd.unit=multi-user.target)
+fi
 display=egl-headless,gl=on
 vnc_args=()
 if [[ $interactive == 1 ]]; then
@@ -254,6 +266,7 @@ if [[ $interactive == 1 ]]; then
 fi
 "${vm_command[@]}" "$script_dir/virtme-egl-run" \
 	--force-9p --disable-microvm --mods auto --show-boot-console \
+	"${systemd_args[@]}" \
 	--kimg "$kernel_image" --memory "$guest_memory" --cpus 4 --net user \
 	"${qemu_args[@]}" \
 	--rwdir="/run/results=$results" \
@@ -286,6 +299,7 @@ fi
 case $test_case in
 media|media-gpu) pass='PASS: live Mutter scene through broker' ;;
 gpu-capture) pass='PASS: changing nonblack Mutter pixels reached GPU-owned destinations' ;;
+service-gpu) pass='PASS: installed Pronk services sustained GPU capture and VA H.264 media' ;;
 esac
 grep -Fq "$pass" "$log" || {
 	tail -100 "$log" >&2
@@ -309,6 +323,8 @@ if grep -Eq 'BUG:|Oops|Call Trace:|WARNING:' "$log"; then
 fi
 if [[ $test_case == gpu-capture ]]; then
     printf 'PASS: VM assembly captured changing GPU-owned pixels\n'
+elif [[ $test_case == service-gpu ]]; then
+	printf 'PASS: VM Pronk services sustained GPU capture and VA H.264 media\n'
 else
     printf 'PASS: VM assembly produced changing decoded frames\n'
 fi

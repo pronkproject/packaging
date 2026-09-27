@@ -25,12 +25,19 @@ cleanup()
 			wait "$child" 2>/dev/null || :
 		fi
 	done
+	if test "${PRONK_VM_TEST:-}" = service-gpu; then
+		env DBUS_SYSTEM_BUS_ADDRESS=unix:path=/run/dbus/system_bus_socket \
+			systemctl stop pronk-vm-login.service >/dev/null 2>&1 || :
+	fi
 }
 trap cleanup EXIT HUP INT TERM
 
 mkdir -p "$runtime" "$config/pipewire/pipewire.conf.d" \
 	"$config/wireplumber/wireplumber.conf.d" "$data/wireplumber/scripts"
 chmod 0700 "$runtime"
+if test "${PRONK_VM_TEST:-}" = service-gpu; then
+	runtime=/run/user/0
+fi
 cp /run/pronk-source/data/pipewire/80-pronk-remotes.conf \
 	"$config/pipewire/pipewire.conf.d/80-pronk-remotes.conf"
 cp /run/pronk-source/data/wireplumber/80-pronk-access.conf \
@@ -43,7 +50,11 @@ export XDG_CONFIG_HOME=$config
 export XDG_DATA_HOME=$data
 export XDG_RUNTIME_DIR=$runtime
 export PIPEWIRE_RUNTIME_DIR=$runtime
+export PRONK_VM_ASSEMBLY_ROOT=$test_root
 export GST_REGISTRY=$test_root/gst-registry.bin
+if test "${PRONK_VM_TEST:-}" = service-gpu; then
+	export GST_REGISTRY=$runtime/gst-registry.bin
+fi
 export GST_DEBUG=2
 if test -n "${PRONK_VM_CLUTTER_PAINT:-}"; then
 	export CLUTTER_PAINT=$PRONK_VM_CLUTTER_PAINT
@@ -55,6 +66,46 @@ else
 fi
 export WIREPLUMBER_CONFIG_DIR="$config/wireplumber:/usr/share/wireplumber"
 export WIREPLUMBER_DATA_DIR="$data/wireplumber:/usr/share/wireplumber"
+
+if test "${PRONK_VM_TEST:-}" = service-gpu; then
+	login_duration=180
+	if test "${PRONK_VM_INTERACTIVE:-0}" = 1; then
+		login_duration=infinity
+	fi
+	env DBUS_SYSTEM_BUS_ADDRESS=unix:path=/run/dbus/system_bus_socket \
+		systemd-run --quiet --no-block --unit=pronk-vm-login \
+		-p PAMName=login -p User=root \
+		-E XDG_SESSION_TYPE=wayland \
+		-E XDG_SESSION_CLASS=user \
+		-E XDG_SEAT=seat0 -E XDG_VTNR=1 \
+		/usr/bin/sleep "$login_duration"
+	attempt=0
+	until test -S "$runtime/bus" &&
+		systemctl --user show --property=Version --value >/dev/null 2>&1; do
+		attempt=$((attempt + 1))
+		if test "$attempt" -ge 100; then
+			env DBUS_SYSTEM_BUS_ADDRESS=unix:path=/run/dbus/system_bus_socket \
+				systemctl status --no-pager pronk-vm-login.service >&2 || :
+			exit 1
+		fi
+		sleep 0.1
+	done
+	export DBUS_SESSION_BUS_ADDRESS=unix:path=$runtime/bus
+	mkdir -p "$runtime/systemd/user/pronk.service.d" \
+		"$runtime/systemd/user/pronk-chromiacast@.service.d"
+	install -m 0644 /run/test/pronk.service.conf \
+		"$runtime/systemd/user/pronk.service.d/vm.conf"
+	install -m 0644 /run/test/pronk-chromiacast.service.conf \
+		"$runtime/systemd/user/pronk-chromiacast@.service.d/vm.conf"
+	systemctl --user set-environment \
+		"DBUS_SESSION_BUS_ADDRESS=$DBUS_SESSION_BUS_ADDRESS"
+	systemctl --user import-environment \
+		LD_LIBRARY_PATH LIBVA_DRIVER_NAME LIBVA_DRIVERS_PATH \
+		VK_DRIVER_FILES GBM_BACKENDS_PATH GST_REGISTRY \
+		XDG_CONFIG_HOME XDG_DATA_HOME PIPEWIRE_RUNTIME_DIR \
+		WIREPLUMBER_CONFIG_DIR WIREPLUMBER_DATA_DIR
+	systemctl --user daemon-reload
+fi
 
 if test "${PRONK_VM_INTERACTIVE:-0}" = 1; then
 	/usr/bin/gnome-shell --wayland --no-x11 >"$test_root/mutter.log" 2>&1 &
@@ -75,6 +126,15 @@ until gdbus call --session --dest org.gnome.Mutter.DisplayConfig \
 	fi
 	sleep 0.1
 done
+
+if test "${PRONK_VM_TEST:-}" = service-gpu; then
+	sh /run/test/service >"$test_root/service.log" 2>&1 || {
+		tail -150 "$test_root/service.log" >&2
+		exit 1
+	}
+	cat "$test_root/service.log"
+	exit 0
+fi
 
 pipewire -c pipewire.conf >"$test_root/pipewire.log" 2>&1 &
 pipewire_pid=$!

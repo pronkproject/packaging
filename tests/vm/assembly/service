@@ -1,0 +1,138 @@
+#!/bin/sh
+# SPDX-License-Identifier: GPL-2.0-or-later
+
+set -eu
+
+test -n "${PRONK_VM_RECEIVER:-}"
+test -x /usr/bin/pronkd
+test -x /usr/libexec/pronk/pronk-chromiacast
+test -x /usr/bin/pronkctl
+if test "${PRONK_VM_INTERACTIVE:-0}" != 1; then
+	test -x "${PRONK_PATTERN_BIN:?}"
+fi
+pattern_pid=
+display_id=
+
+cleanup()
+{
+	if test -n "$pattern_pid"; then
+		kill "$pattern_pid" 2>/dev/null || :
+		wait "$pattern_pid" 2>/dev/null || :
+	fi
+	if test -n "$display_id"; then
+		timeout 10 /usr/bin/pronkctl remove-display "$display_id" \
+			>/dev/null 2>&1 || :
+	fi
+	systemctl --user stop pronk.service pronk-chromiacast.socket \
+		>/dev/null 2>&1 || :
+}
+trap cleanup EXIT HUP INT TERM
+
+systemctl --user set-environment \
+	"PRONK_CHROMIACAST_RECEIVER_ENDPOINT=$PRONK_VM_RECEIVER"
+# The backend must register over its short-lived socket activation request.
+# Build GStreamer's plugin cache before that request begins.
+gst-inspect-1.0 va >/dev/null 2>&1 || :
+systemctl --user daemon-reload
+if ! systemctl --user start pronk-chromiacast.socket pronk.service; then
+	systemctl --user status --no-pager pronk.service \
+		pronk-chromiacast.socket pronk-pipewire.service \
+		pronk-wireplumber.service >&2 || :
+	journalctl --user --no-pager -n 150 >&2 || :
+	exit 1
+fi
+
+attempt=0
+inventory=
+until inventory=$(/usr/bin/pronkctl list-devices 2>/dev/null) &&
+	printf '%s\n' "$inventory" | grep -Fq 'ID: chromiacast:'; do
+	attempt=$((attempt + 1))
+	if test "$attempt" -ge 300; then
+		printf '%s\n' "$inventory" >&2
+		systemctl --user status --no-pager pronk.service \
+			pronk-chromiacast.socket >&2 || :
+		journalctl --user --no-pager -n 150 >&2 || :
+		exit 1
+	fi
+	sleep 0.1
+done
+printf '%s\n' "$inventory"
+printf 'PASS: installed Pronk services discovered the authenticated receiver\n'
+
+device=$(printf '%s\n' "$inventory" |
+	sed -n 's/^[[:space:]]*ID: \(chromiacast:[0-9a-f]*\)$/\1/p' |
+	head -n 1)
+test -n "$device"
+if ! timeout 60 /usr/bin/pronkctl add-display --device "$device" --no-audio; then
+	journalctl --user --no-pager -o cat -n 300 >&2 || :
+	exit 1
+fi
+displays=$(/usr/bin/pronkctl list-displays)
+printf '%s\n' "$displays"
+display_id=$(printf '%s\n' "$displays" | sed -n 's/^[[:space:]]*ID: \([0-9a-f-]*\)$/\1/p' | head -n 1)
+cast_connector=$(printf '%s\n' "$displays" | sed -n 's/^[[:space:]]*Output: \([^ ]*\) .*/\1/p' | head -n 1)
+test -n "$display_id"
+test -n "$cast_connector"
+
+apply_route()
+{
+	gdctl set \
+		--logical-monitor --monitor Virtual-9 --mode 1280x800@74.994 \
+			--primary --scale 1 --x 0 --y 0 \
+		--logical-monitor --monitor "$cast_connector" --mode "$1" \
+			--scale 1 --right-of Virtual-9
+}
+
+apply_route 1280x720@60.000
+attempt=0
+until displays=$(/usr/bin/pronkctl list-displays) &&
+	printf '%s\n' "$displays" | grep -Fq 'Route: Active '; do
+	attempt=$((attempt + 1))
+	if test "$attempt" -ge 20; then
+		apply_route 1920x1080@60.000
+		apply_route 1280x720@60.000
+		break
+	fi
+	sleep 0.25
+done
+
+attempt=0
+until displays=$(/usr/bin/pronkctl list-displays) &&
+	printf '%s\n' "$displays" | grep -Fq 'Media: Running'; do
+	attempt=$((attempt + 1))
+	if test "$attempt" -ge 160; then
+		/usr/bin/pronkctl list-displays >&2 || :
+		journalctl --user --no-pager -o cat -n 200 >&2 || :
+		exit 1
+	fi
+	sleep 0.25
+done
+if test "${PRONK_VM_INTERACTIVE:-0}" = 1; then
+	printf 'PASS: installed Pronk services are streaming the interactive desktop\n'
+	while :; do sleep 60; done
+fi
+"$PRONK_PATTERN_BIN" >"$PRONK_VM_ASSEMBLY_ROOT/pattern.log" 2>&1 &
+pattern_pid=$!
+sleep 2
+if ! kill -0 "$pattern_pid" 2>/dev/null; then
+	tail -100 "$PRONK_VM_ASSEMBLY_ROOT/pattern.log" >&2
+	exit 1
+fi
+sleep 12
+displays=$(/usr/bin/pronkctl list-displays)
+printf '%s\n' "$displays"
+printf '%s\n' "$displays" | grep -Fq 'Media: Running'
+journalctl --user --no-pager -o cat -n 3000 \
+	>"$PRONK_VM_ASSEMBLY_ROOT/media-journal.log"
+grep -F 'capture media path selected' \
+	"$PRONK_VM_ASSEMBLY_ROOT/media-journal.log" | grep -Fq 'storage=DmaBuf'
+grep -F 'configured video encoding path' \
+	"$PRONK_VM_ASSEMBLY_ROOT/media-journal.log" | grep -Fq 'DMA-BUF DMA_DRM to VA-memory NV12'
+acknowledged=$(sed -n 's/.*acknowledged_frames=\([0-9][0-9]*\).*/\1/p' \
+	"$PRONK_VM_ASSEMBLY_ROOT/media-journal.log" | tail -n 1)
+if test -z "$acknowledged" || test "$acknowledged" -lt 60; then
+	printf 'receiver acknowledged only %s frames\n' "${acknowledged:-none}" >&2
+	exit 1
+fi
+printf 'Receiver acknowledged %s frames\n' "$acknowledged"
+printf 'PASS: installed Pronk services sustained GPU capture and VA H.264 media\n'

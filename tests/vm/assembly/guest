@@ -16,6 +16,9 @@ fi
 case ${PRONK_VM_TEST:-media} in
 media|media-gpu) test -x "$test_dir/pronk-capture-mutter-media-live-test" ;;
 gpu-capture) test -x "$test_dir/pronk-capture-mutter-gpu-live-test" ;;
+service-gpu) test -x /run/extension/usr/bin/pronkd &&
+	test -x /run/extension/usr/libexec/pronk/pronk-chromiacast &&
+	test -x /run/extension/usr/bin/pronkctl ;;
 *) exit 2 ;;
 esac
 export PRONK_VM_TEST_DIR=$test_dir
@@ -24,6 +27,16 @@ if test -f /run/kernel-build/fs/overlayfs/overlay.ko; then
 	insmod /run/kernel-build/fs/overlayfs/overlay.ko
 fi
 mount -t overlay overlay -o lowerdir=/run/extension/usr:/usr /usr
+if test "${PRONK_VM_TEST:-}" = service-gpu; then
+	# The host's rootless staging UID is not guest root through virtme's 9p
+	# mount. Present the installed registry with the ownership an RPM has.
+	mkdir -p /run/pronk-vm/backends.d
+	cp /usr/lib/pronk/backends.d/*.toml /run/pronk-vm/backends.d/
+	chown 0:0 /run/pronk-vm/backends.d /run/pronk-vm/backends.d/*.toml
+	chmod 0755 /run/pronk-vm/backends.d
+	chmod 0644 /run/pronk-vm/backends.d/*.toml
+	mount --bind /run/pronk-vm/backends.d /usr/lib/pronk/backends.d
+fi
 if ! grep -Fqx "HOST_KERNEL_RELEASE=$(uname -r)" \
 	/usr/lib/pronk-sysext/manifest; then
 	if test "${PRONK_VM_ALLOW_KERNEL_RELEASE_MISMATCH:-0}" != 1; then
