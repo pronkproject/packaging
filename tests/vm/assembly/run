@@ -43,7 +43,7 @@ pattern=${PRONK_VM_PATTERN:-gtk}
 renderer_build=${PRONK_VM_RENDERER_BUILD:-}
 use_renderer=${PRONK_VM_USE_RENDERER:-1}
 if [[ $test_case == media-gpu ]]; then
-	use_renderer=${PRONK_VM_USE_RENDERER:-0}
+	use_renderer=${PRONK_VM_USE_RENDERER:-1}
 fi
 pronk_bin_dir=${PRONK_VM_PRONK_BIN_DIR:-}
 mesa_stage=${PRONK_VM_MESA_STAGE:-}
@@ -61,8 +61,8 @@ esac
 if [[ $test_case == media-gpu ]]; then
 	gpu_media=1
 	[[ -n $video_build && -n $mesa_stage && $copy_mode != primary-gpu-cpu &&
-	   $use_renderer == 0 ]] || {
-		printf 'media-gpu requires a video VM build, Mesa stage, GPU Mutter copy, and no separate renderer daemon\n' >&2
+	   $use_renderer == 1 ]] || {
+		printf 'media-gpu requires a video VM build, Mesa stage, GPU Mutter copy, and the renderer daemon\n' >&2
 		exit 2
 	}
 fi
