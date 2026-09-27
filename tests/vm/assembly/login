@@ -8,6 +8,10 @@ runtime=/run/user/0
 mkdir -p /run/pronk-vm/home
 mount --bind /run/pronk-vm/home /root
 systemctl stop kmsconvt@tty1.service getty@tty1.service 2>/dev/null || :
+if test -n "${PRONK_VM_SHELL_LAYOUT_OVERLAY:-}"; then
+	test -f "$PRONK_VM_SHELL_LAYOUT_OVERLAY"
+	shell_resource_overlays="/org/gnome/shell/ui/layout.js=$PRONK_VM_SHELL_LAYOUT_OVERLAY"
+fi
 
 env DBUS_SYSTEM_BUS_ADDRESS=unix:path=/run/dbus/system_bus_socket \
 	systemd-run --quiet --no-block --unit=pronk-vm-login \
@@ -21,6 +25,7 @@ env DBUS_SYSTEM_BUS_ADDRESS=unix:path=/run/dbus/system_bus_socket \
 	-E GBM_BACKENDS_PATH="$GBM_BACKENDS_PATH" \
 	-E VK_DRIVER_FILES="$VK_DRIVER_FILES" \
 	-E GSETTINGS_SCHEMA_DIR="$GSETTINGS_SCHEMA_DIR" \
+	-E G_RESOURCE_OVERLAYS="${shell_resource_overlays:-}" \
 	-E MUTTER_DEBUG_MULTI_GPU_FORCE_COPY_MODE="$MUTTER_DEBUG_MULTI_GPU_FORCE_COPY_MODE" \
 	-E MUTTER_DEBUG_USE_KMS_MODIFIERS=1 \
 	-E PRONK_VM_LOGIN_LOG="$test_root/shell.log" \

@@ -166,6 +166,14 @@ exposed on the network. From another machine, forward port 5901 over SSH
 before connecting a viewer. The CastKMS display remains a separate guest
 monitor, so the VNC window and receiver show different parts of the desktop
 unless the guest's display arrangement is changed.
+`PRONK_VM_SHELL_LAYOUT_JS` can point to a test copy of GNOME Shell's
+`js/ui/layout.js`; the interactive guest overlays only that resource. This
+allows an upstream Shell layout fix to be tested before it reaches the guest's
+installed package, without changing the other JS resources or the media stack.
+For browser cadence checks, `PRONK_VM_BROWSER_URL=https://www.testufo.com/`
+opens Firefox inside the same guest session after Pronk begins streaming. The
+browser's displayed rate measures that guest surface; it does not by itself
+measure distinct decoded frames on the receiver.
 
 `PRONK_VM_COPY_MODE=primary-gpu-gpu` is also accepted by the GPU capture
 probe to isolate Mutter's GPU copy from its direct import path.

@@ -109,6 +109,11 @@ until displays=$(/usr/bin/pronkctl list-displays) &&
 done
 if test "${PRONK_VM_INTERACTIVE:-0}" = 1; then
 	printf 'PASS: installed Pronk services are streaming the interactive desktop\n'
+	if test -n "${PRONK_VM_BROWSER_URL:-}"; then
+		XDG_SESSION_TYPE=wayland WAYLAND_DISPLAY=wayland-0 \
+			MOZ_ENABLE_WAYLAND=1 /usr/bin/firefox --new-window "$PRONK_VM_BROWSER_URL" \
+			>"$PRONK_VM_ASSEMBLY_ROOT/firefox.log" 2>&1 &
+	fi
 	while :; do sleep 60; done
 fi
 "$PRONK_PATTERN_BIN" >"$PRONK_VM_ASSEMBLY_ROOT/pattern.log" 2>&1 &
