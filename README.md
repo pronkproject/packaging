@@ -133,6 +133,12 @@ manifest. A system or kernel update therefore falls back to the stock desktop
 until the extension is rebuilt. Built-in CastKMS is initialized by the kernel;
 the extension does not load or replace kernel code.
 
+`install` compiles the host and extension GSettings schemas together before
+publishing the image. It checks the extension schemas strictly, tolerates
+invalid host override keys in the same way as normal schema compilation, and
+verifies that the merged result retains every schema from both inputs. GNOME
+does not depend on a schema compiler running successfully during boot.
+
 Useful diagnostics do not change the system:
 
 ```sh

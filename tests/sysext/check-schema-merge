@@ -1,0 +1,62 @@
+#!/usr/bin/env bash
+# SPDX-License-Identifier: GPL-2.0-or-later
+
+set -euo pipefail
+
+merge_schemas=${1:?usage: check-schema-merge MERGE_SCHEMAS}
+fixture=$(mktemp -d)
+trap 'rm -rf --one-file-system -- "$fixture"' EXIT
+
+base=$fixture/base
+extension=$fixture/extension
+output=$fixture/output
+mkdir -p "$base" "$extension" "$output"
+
+cat > "$base/org.example.gschema.xml" <<'EOF'
+<schemalist>
+  <schema id="org.example.Base" path="/org/example/base/">
+    <key name="old-key" type="b"><default>false</default></key>
+  </schema>
+</schemalist>
+EOF
+glib-compile-schemas --strict "$base"
+cat > "$base/10-invalid.gschema.override" <<'EOF'
+[org.example.Base]
+absent-key=true
+EOF
+
+cat > "$extension/org.example.gschema.xml" <<'EOF'
+<schemalist>
+  <schema id="org.example.Base" path="/org/example/base/">
+    <key name="new-key" type="b"><default>true</default></key>
+  </schema>
+  <schema id="org.example.Extension" path="/org/example/extension/">
+    <key name="enabled" type="b"><default>true</default></key>
+  </schema>
+</schemalist>
+EOF
+glib-compile-schemas --strict "$extension"
+
+"$merge_schemas" "$base" "$extension" "$output/gschemas.compiled"
+python3 - "$output" <<'PY'
+import sys
+
+from gi.repository import Gio
+
+source = Gio.SettingsSchemaSource.new_from_directory(sys.argv[1], None, False)
+base = source.lookup("org.example.Base", False)
+assert base is not None
+assert base.has_key("new-key")
+assert not base.has_key("old-key")
+assert source.lookup("org.example.Extension", False) is not None
+PY
+
+cat > "$extension/10-invalid.gschema.override" <<'EOF'
+[org.example.Extension]
+absent-key=true
+EOF
+if "$merge_schemas" "$base" "$extension" "$output/invalid.compiled" 2>/dev/null; then
+	printf 'error: invalid extension override was accepted\n' >&2
+	exit 1
+fi
+test ! -e "$output/invalid.compiled"

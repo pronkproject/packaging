@@ -33,6 +33,7 @@ run_tests=false
 rebuild_builder=false
 target_kernel_release=${PRONK_TARGET_KERNEL_RELEASE:-}
 temporary_stage=
+temporary_schema_dir=
 pending_installed_image=
 
 cleanup_temporary_stage()
@@ -65,11 +66,26 @@ cleanup_pending_installed_image()
 	esac
 }
 
+cleanup_temporary_schemas()
+{
+	[[ -n $temporary_schema_dir && -d $temporary_schema_dir ]] || return 0
+	case $temporary_schema_dir in
+	"$state_dir"/.merged-schemas.*)
+		rm -rf --one-file-system -- "$temporary_schema_dir"
+		;;
+	*)
+		printf 'warning: refusing to remove unexpected schema directory: %s\n' \
+			"$temporary_schema_dir" >&2
+		;;
+	esac
+}
+
 cleanup_on_exit()
 {
 	local status=$?
 
 	cleanup_temporary_stage
+	cleanup_temporary_schemas
 	cleanup_pending_installed_image
 	return "$status"
 }
@@ -230,6 +246,33 @@ host_ostree_version()
 	else
 		printf 'non-ostree:%s-%s\n' "$(host_id)" "$(host_version_id)"
 	fi
+}
+
+host_schema_directory()
+{
+	local deployment
+	local osname
+	local checksum
+	local schema_dir
+
+	if [[ ! -e /run/ostree-booted ]]; then
+		printf '%s\n' /usr/share/glib-2.0/schemas
+		return
+	fi
+
+	read -r osname checksum < <(rpm-ostree status --json | python3 -c '
+import json, sys
+for deployment in json.load(sys.stdin)["deployments"]:
+    if deployment.get("booted"):
+        print(deployment["osname"], deployment["checksum"])
+        break
+')
+	[[ -n $osname && -n $checksum ]] || die 'cannot identify the booted OSTree deployment'
+	deployment=$(find "/sysroot/ostree/deploy/$osname/deploy" \
+		-maxdepth 1 -mindepth 1 -type d -name "$checksum.*" -print -quit)
+	schema_dir=$deployment/usr/share/glib-2.0/schemas
+	[[ -d $schema_dir ]] || die "booted deployment lacks schemas: $schema_dir"
+	printf '%s\n' "$schema_dir"
 }
 
 kernel_release()
@@ -1245,6 +1288,7 @@ install_extension()
 {
 	local stage=$state_dir/staged
 	local manifest=$stage/usr/lib/pronk-sysext/manifest
+	local base_schemas
 	local identifier
 	local target
 	local pending_target
@@ -1253,6 +1297,12 @@ install_extension()
 	[[ -d $stage ]] || die 'no staged extension exists; run build first'
 	validate_stage "$stage"
 	manifest_matches_host "$manifest" || die 'the staged extension does not match the running deployment and kernel'
+	base_schemas=$(host_schema_directory)
+	temporary_schema_dir=$(mktemp -d "$state_dir/.merged-schemas.XXXXXX")
+	log 'Compiling host and extension schemas before publication'
+	"$script_dir/sysext/pronk-merge-schemas" \
+		"$base_schemas" "$stage/usr/share/glib-2.0/schemas" \
+		"$temporary_schema_dir/gschemas.compiled"
 	identifier=$(read_value "$manifest" BUILD_ID)
 	safe_component "$identifier"
 	target=$extension_store/images/$identifier
@@ -1267,6 +1317,9 @@ install_extension()
 	fi
 	sudo install -d -m 0755 -o root -g root "$pending_target"
 	sudo cp -a "$stage/." "$pending_target/"
+	sudo install -m 0644 \
+		"$temporary_schema_dir/gschemas.compiled" \
+		"$pending_target/usr/share/glib-2.0/schemas/gschemas.compiled"
 	sudo chown -R root:root "$pending_target"
 	sudo chmod -R go-w "$pending_target"
 	# mktemp deliberately creates the local staging root as mode 0700. cp -a
@@ -1293,12 +1346,9 @@ install_extension()
 		"$script_dir/sysext/80-pronk-dev.conf" \
 		/etc/systemd/sysext.conf.d/80-pronk-dev.conf
 	sudo install -m 0644 -o root -g root \
-		"$script_dir/sysext/pronk-sysext-compile-schemas.service" \
-		/etc/systemd/system/pronk-sysext-compile-schemas.service
-	sudo install -m 0644 -o root -g root \
 		"$script_dir/sysext/pronk-sysext-udev.service" \
 		/etc/systemd/system/pronk-sysext-udev.service
-	sudo systemctl enable pronk-sysext-compile-schemas.service pronk-sysext-udev.service
+	sudo systemctl enable pronk-sysext-udev.service
 	sudo env PRONK_SYSEXT_DISABLED=/dev/null \
 		/etc/systemd/system-generators/pronk-sysext-generator
 
@@ -1402,8 +1452,10 @@ check_scripts()
 	local sysext_config=$script_dir/sysext/80-pronk-dev.conf
 	local shellcheck_files=(
 		"$script_dir/pronk-dev-sysext"
+		"$script_dir/sysext/pronk-merge-schemas"
 		"$script_dir/sysext/pronk-sysext-generator"
 		"$packaging_root/tests/sysext/check-dev-sysext"
+		"$packaging_root/tests/sysext/check-schema-merge"
 	)
 
 	log 'Checking shell syntax'
@@ -1420,6 +1472,9 @@ check_scripts()
 	log 'Exercising the version guard'
 	"$packaging_root/tests/sysext/check-dev-sysext" \
 		"$script_dir/sysext/pronk-sysext-generator"
+	log 'Exercising the merged GSettings schema check'
+	"$packaging_root/tests/sysext/check-schema-merge" \
+		"$script_dir/sysext/pronk-merge-schemas"
 	log 'Checking the system extension mutability policy'
 	grep -Fxq '[SysExt]' "$sysext_config"
 	grep -Fxq 'Mutable=ephemeral' "$sysext_config"

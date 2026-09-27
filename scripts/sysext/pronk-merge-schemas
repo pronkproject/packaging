@@ -1,0 +1,48 @@
+#!/usr/bin/env bash
+# SPDX-License-Identifier: GPL-2.0-or-later
+
+set -euo pipefail
+
+if (($# != 3)); then
+	printf 'usage: %s BASE_SCHEMAS EXTENSION_SCHEMAS OUTPUT\n' "$0" >&2
+	exit 2
+fi
+
+base_schemas=$1
+extension_schemas=$2
+output=$3
+
+[[ -d $base_schemas && -d $extension_schemas ]] || {
+	printf 'error: both schema directories must exist\n' >&2
+	exit 1
+}
+
+work=$(mktemp -d)
+trap 'rm -rf --one-file-system -- "$work"' EXIT
+mkdir "$work/merged" "$work/strict"
+
+# The extension's own schemas must be valid. Distribution overrides in the
+# base may refer to keys absent from a newer schema, so compile the union
+# without --strict while preserving all valid overrides.
+glib-compile-schemas --strict --targetdir="$work/strict" "$extension_schemas"
+cp -a "$base_schemas/." "$work/merged/"
+cp -a "$extension_schemas/." "$work/merged/"
+glib-compile-schemas "$work/merged"
+
+python3 - "$base_schemas" "$extension_schemas" "$work/merged" <<'PY'
+import sys
+
+from gi.repository import Gio
+
+base, extension, merged = (
+    Gio.SettingsSchemaSource.new_from_directory(path, None, False)
+    for path in sys.argv[1:]
+)
+for source in (base, extension):
+    non_relocatable, relocatable = source.list_schemas(False)
+    for name in (*non_relocatable, *relocatable):
+        if merged.lookup(name, False) is None:
+            raise SystemExit(f"merged schemas are missing {name}")
+PY
+
+install -m 0644 "$work/merged/gschemas.compiled" "$output"
