@@ -118,17 +118,32 @@ The guest retains both displays and the test checks the CastKMS target.
 
 For a full GPU media test, set `PRONK_VM_TEST=media-gpu` alongside the
 video-enabled Mesa stage and QEMU/virglrenderer build. The launcher selects
-Mutter's zero-copy path and leaves the separate renderer daemon stopped. The
-guest test issues its own administrative renderer endpoint, publishes a
-renderer configuration,
-waits for Mutter to select it, allocates GPU capture destinations, transports
+Mutter's zero-copy path and starts the separate renderer daemon. The guest
+test waits for Mutter to select its renderer, allocates GPU capture
+destinations, transports
 their DMA-BUFs through private PipeWire, and uses the selected virtio-gpu VA
 H.264 encoder. It verifies decoded changing pixels and the media graph's
 encoder, memory path, and render device. This probe uses test-only CPU
 decoding to check the encoded result; it does not copy raw capture frames to
 the CPU for encoding. Add `PRONK_VM_RECEIVER=HOST:PORT` only when a receiver
-may be interrupted. The test owns the selected renderer endpoint rather than
-sharing one with the installed daemon.
+may be interrupted. The test receives only final-image capture authority;
+the daemon owns its renderer endpoint independently.
+
+`PRONK_VM_TEST=service-gpu` exercises the installed Pronk service path rather
+than the live capture probe. It boots systemd in the guest, creates an active
+local Wayland login session, starts the real user units for `pronkd`, private
+PipeWire, WirePlumber, and the socket-activated Chromiacast backend, then uses
+`pronkctl add-display` and `gdctl` to route the CastKMS monitor. It runs a
+changing Wayland pattern for twelve seconds and requires a persistent Running
+media state, GPU-owned final-image capture, VA H.264 with DMA-BUF input, and
+advancing receiver acknowledgements. The backend authenticates the receiver
+at `PRONK_VM_RECEIVER=IP:PORT` over a direct connection; this avoids relying
+on multicast discovery through QEMU's user-mode NAT. The service test runs
+the daemon and backend binaries from the rebuilt system extension. The
+guest presents the staged backend registry as root-owned because virtme's 9p
+mount exposes the host's rootless-build UID, which production Pronk correctly
+rejects. A pass establishes transport and service integration, not visual
+playback on the television.
 
 `PRONK_VM_VIDEO_RATE` selects 30 (default) or 60 frames per second for capture,
 encoding, and the receiver offer. With a receiver, the probe requires both
@@ -139,7 +154,7 @@ separately and ends the window before stopping capture or media. Receiver
 acknowledgements do not establish how many distinct frames the television
 displays.
 
-For an interactive guest desktop, use the same GPU media assembly with
+For an interactive guest desktop, use `PRONK_VM_TEST=service-gpu` with
 `PRONK_VM_INTERACTIVE=1` and a receiver. The guest starts GNOME Shell rather
 than the finite test pattern, and casting continues until the launcher is
 stopped. QEMU keeps the EGL graphics backend used by the video test and serves
