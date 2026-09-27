@@ -165,7 +165,15 @@ keyboard; closing the viewer does not stop the cast. The VNC listener is not
 exposed on the network. From another machine, forward port 5901 over SSH
 before connecting a viewer. The CastKMS display remains a separate guest
 monitor, so the VNC window and receiver show different parts of the desktop
-unless the guest's display arrangement is changed.
+unless the guest's display arrangement is changed. The TV is requested as
+primary in the interactive case, but applications may still open on VNC and
+can be moved to the TV; VNC remains available for input and inspection.
+
+The interactive test reapplies its 720p TV layout if a VNC resize makes Mutter
+choose the monitor's higher preferred mode again. That keeps the test on the
+renderer configuration it started with; it is not a production mode-migration
+mechanism.
+
 `PRONK_VM_SHELL_LAYOUT_JS` can point to a test copy of GNOME Shell's
 `js/ui/layout.js`; the interactive guest overlays only that resource. This
 allows an upstream Shell layout fix to be tested before it reaches the guest's

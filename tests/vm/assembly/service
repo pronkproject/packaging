@@ -76,11 +76,65 @@ test -n "$cast_connector"
 
 apply_route()
 {
-	gdctl set \
-		--logical-monitor --monitor Virtual-9 --mode 1280x800@74.994 \
-			--primary --scale 1 --x 0 --y 0 \
-		--logical-monitor --monitor "$cast_connector" --mode "$1" \
-			--scale 1 --right-of Virtual-9
+	requested_mode=$1
+	vnc_mode=$(gdctl show | awk '
+		/Monitor Virtual-9 / {
+			selected = 1
+			next
+		}
+		/Monitor / {
+			selected = 0
+		}
+		selected && /Current mode/ {
+			current = 1
+			next
+		}
+		selected && current && match($0, /[0-9]+x[0-9]+@[0-9.]+/) {
+			print substr($0, RSTART, RLENGTH)
+			exit
+		}')
+	test -n "$vnc_mode"
+	set -- --logical-monitor --monitor Virtual-9 --mode "$vnc_mode" \
+		--scale 1 --x 0 --y 0
+	if test "${PRONK_VM_INTERACTIVE:-0}" != 1; then
+		set -- "$@" --primary
+	fi
+	set -- "$@" --logical-monitor --monitor "$cast_connector" \
+		--mode "$requested_mode" --scale 1 --right-of Virtual-9
+	if test "${PRONK_VM_INTERACTIVE:-0}" = 1; then
+		set -- "$@" --primary
+	fi
+	gdctl set "$@"
+}
+
+cast_mode_is_current()
+{
+	gdctl show | awk -v connector="$cast_connector" '
+		/Monitor / {
+			selected = index($0, "Monitor " connector " (") != 0
+		}
+		selected && /1280x720@60[.]000/ {
+			found = 1
+		}
+		END {
+			exit !found
+		}'
+}
+
+watch_display_configuration()
+{
+	gdbus monitor --session --dest org.gnome.Mutter.DisplayConfig \
+		--object-path /org/gnome/Mutter/DisplayConfig |
+	while IFS= read -r event; do
+		case $event in
+		*MonitorsChanged*)
+			if ! cast_mode_is_current; then
+				printf 'Restoring the interactive guest TV mode after a monitor change\n'
+				apply_route 1280x720@60.000 || :
+			fi
+			;;
+		esac
+	done
 }
 
 apply_route 1280x720@60.000
@@ -109,6 +163,7 @@ until displays=$(/usr/bin/pronkctl list-displays) &&
 done
 if test "${PRONK_VM_INTERACTIVE:-0}" = 1; then
 	printf 'PASS: installed Pronk services are streaming the interactive desktop\n'
+	watch_display_configuration &
 	if test -n "${PRONK_VM_BROWSER_URL:-}"; then
 		XDG_SESSION_TYPE=wayland WAYLAND_DISPLAY=wayland-0 \
 			MOZ_ENABLE_WAYLAND=1 /usr/bin/firefox --new-window "$PRONK_VM_BROWSER_URL" \
