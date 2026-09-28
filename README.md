@@ -1,10 +1,11 @@
 # Pronk Fedora packaging
 
 This repository builds the Fedora package set for the Pronk casting stack.
-Each source tree is pinned as a Git submodule. No patches from one project are
-stored in another project: the SRPM helper generates the Mutter and GNOME
-Control Center patch series directly from their pinned branches with
-`git format-patch`.
+Application source trees are pinned as Git submodules. The SRPM helper
+generates the Mutter and GNOME Control Center patch series directly from
+their pinned branches with `git format-patch`. The VA encoder runtime uses
+a checksum-pinned GStreamer release archive and downstream patches under
+`packages/gstreamer-va`.
 
 The package set contains Pronk, replacement libdrm, Mutter, and GNOME Control
 Center packages, WirePlumber 0.5.15, GNOME 51 desktop schemas, GTK 4.23,
@@ -33,6 +34,17 @@ host's enabled repositories:
 ```sh
 scripts/pronk-dev-sysext deploy
 ```
+
+The extension also builds GStreamer's VA plugin and its three runtime helper
+libraries. Its H.264 encoder uses implicit picture ordering for reference
+streams without B-frames, independently of Baseline or High profile. Streams
+with B-frames retain explicit picture ordering. The source version, checksum,
+patch list and build identity are recorded in
+`/usr/lib/pronk-sysext/gstreamer-va.toml`. Only matching GStreamer versions
+are accepted by the builder; development headers and build-directory library
+search paths are not installed. `--run-tests` runs the encoder regression
+suite when a VA H.264 encoder is available, or reports a hardware skip in
+the isolated builder.
 
 The helper always reads this repository's `sources/*` submodules. It builds the
 userspace sources and records the CastKMS kernel revision in the extension
