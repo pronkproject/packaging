@@ -1483,6 +1483,9 @@ check_scripts()
 	log 'Exercising the merged GSettings schema check'
 	"$packaging_root/tests/sysext/check-schema-merge" \
 		"$script_dir/sysext/pronk-merge-schemas"
+	log 'Checking VA encoder runtime staging'
+	PYTHONDONTWRITEBYTECODE=1 python3 \
+		"$packaging_root/tests/sysext/test_gstreamer_va.py"
 	log 'Checking the system extension mutability policy'
 	grep -Fxq '[SysExt]' "$sysext_config"
 	grep -Fxq 'Mutable=ephemeral' "$sysext_config"
