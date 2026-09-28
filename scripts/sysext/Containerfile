@@ -35,7 +35,10 @@ RUN dnf -y install \
       dbus-daemon \
       edid-decode \
       gstreamer1-plugins-bad-free \
+      gstreamer1-plugins-bad-free-devel \
       jq \
+      libva-devel \
+      patchelf \
       pipewire-gstreamer \
       pipewire-utils \
       ripgrep \
