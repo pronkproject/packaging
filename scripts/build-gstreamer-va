@@ -1,0 +1,157 @@
+#!/usr/bin/python3
+# SPDX-License-Identifier: MIT
+
+"""Build the pinned VA plugin and stage only its runtime libraries."""
+
+import argparse
+import fcntl
+import hashlib
+import os
+import pathlib
+import shlex
+import shutil
+import subprocess
+import tarfile
+import tempfile
+import tomllib
+import urllib.request
+
+
+ROOT = pathlib.Path(__file__).resolve().parent.parent
+PACKAGE = ROOT / "packages/gstreamer-va"
+
+
+def digest(path: pathlib.Path) -> str:
+    with path.open("rb") as stream:
+        return hashlib.file_digest(stream, "sha256").hexdigest()
+
+
+def run(*args: str, **kwargs) -> None:
+    subprocess.run(args, check=True, **kwargs)
+
+
+def stage_runtime(output: pathlib.Path, stage: pathlib.Path) -> None:
+    libraries = stage / "usr/lib64"
+    plugins = libraries / "gstreamer-1.0"
+    plugins.mkdir(parents=True, exist_ok=True)
+    plugin = plugins / "libgstva.so"
+    if plugin.exists() or plugin.is_symlink():
+        plugin.unlink()
+    shutil.copy2(output / "sys/va/libgstva.so", plugin)
+    runtime_files = [plugin]
+    for subdir, library in [("codecs", "gstcodecs"),
+                            ("codecparsers", "gstcodecparsers"), ("va", "gstva")]:
+        candidates = [path for path in
+                      (output / f"gst-libs/gst/{subdir}").glob(f"lib{library}-1.0.so.0*")
+                      if path.is_file() or path.is_symlink()]
+        if not candidates:
+            raise SystemExit(f"Missing VA runtime library: {library}")
+        for path in candidates:
+            target = libraries / path.name
+            if target.exists() or target.is_symlink():
+                target.unlink()
+            if path.is_symlink():
+                target.symlink_to(os.readlink(path))
+            else:
+                shutil.copy2(path, target)
+                runtime_files.append(target)
+    for path in runtime_files:
+        run("patchelf", "--remove-rpath", str(path))
+        path.chmod(0o644)
+
+
+def build(state: pathlib.Path, stage: pathlib.Path, run_tests: bool) -> None:
+    config_path = PACKAGE / "source.toml"
+    config = tomllib.loads(config_path.read_text())
+    version = config["version"]
+    installed_version = subprocess.check_output(
+        ["pkg-config", "--modversion", "gstreamer-1.0"], text=True
+    ).strip()
+    if installed_version != version:
+        raise SystemExit(
+            f"VA plugin needs GStreamer {version}, builder has {installed_version}"
+        )
+
+    patches = [PACKAGE / name for name in config["patches"]]
+    identity = hashlib.sha256()
+    for path in [config_path, pathlib.Path(__file__), *patches]:
+        identity.update(path.read_bytes())
+    identity.update(os.environ.get("PRONK_BUILDER_IDENTITY", "local").encode())
+    build_root = state / "builds/gstreamer-va" / identity.hexdigest()
+    build_root.mkdir(parents=True, exist_ok=True)
+    archive = build_root / f"gst-plugins-bad-{version}.tar.xz"
+    if not archive.exists():
+        with tempfile.TemporaryDirectory(dir=build_root) as temporary:
+            downloaded = pathlib.Path(temporary) / "source.tar.xz"
+            with urllib.request.urlopen(config["url"], timeout=60) as response:
+                with downloaded.open("wb") as output:
+                    shutil.copyfileobj(response, output)
+            if digest(downloaded) != config["sha256"]:
+                raise SystemExit("GStreamer source checksum mismatch")
+            downloaded.replace(archive)
+    if digest(archive) != config["sha256"]:
+        raise SystemExit("Cached GStreamer source checksum mismatch")
+
+    source = build_root / "source"
+    if not source.exists():
+        with tempfile.TemporaryDirectory(dir=build_root) as temporary:
+            unpacked = pathlib.Path(temporary)
+            with tarfile.open(archive) as tar:
+                tar.extractall(unpacked, filter="data")
+            extracted = unpacked / f"gst-plugins-bad-{version}"
+            for patch in patches:
+                run("git", "apply", str(patch), cwd=extracted)
+            extracted.rename(source)
+
+    output = build_root / "build"
+    options = [
+        "--prefix=/usr", "--libdir=lib64", "--buildtype=release",
+        "-Dauto_features=disabled", "-Dva=enabled", "-Dtests=disabled",
+        "-Dexamples=disabled", "-Dtools=disabled", "-Ddoc=disabled",
+    ]
+    if (output / "build.ninja").exists():
+        run("meson", "setup", "--reconfigure", str(output), str(source), *options)
+    else:
+        run("meson", "setup", str(output), str(source), *options)
+    run("ninja", "-C", str(output), "-j", os.environ.get("PRONK_BUILD_JOBS", "3"),
+        "sys/va/libgstva.so")
+    stage_runtime(output, stage)
+
+    if run_tests:
+        check = output / "vah264enc-check"
+        flags = subprocess.check_output(
+            ["pkg-config", "--cflags", "--libs", "gstreamer-check-1.0",
+             "gstreamer-codecparsers-1.0"], text=True
+        )
+        run("cc", "-Wall", "-Wextra", "-DGST_USE_UNSTABLE_API",
+            str(source / "tests/check/elements/vah264enc.c"), "-o", str(check),
+            *shlex.split(flags))
+        with tempfile.TemporaryDirectory(dir=build_root) as temporary:
+            environment = dict(os.environ,
+                               GST_PLUGIN_PATH_1_0=str(stage / "usr/lib64/gstreamer-1.0"),
+                               LD_LIBRARY_PATH=str(stage / "usr/lib64"),
+                               GST_REGISTRY_1_0=str(pathlib.Path(temporary) / "registry"))
+            run(str(check), env=environment)
+
+    metadata = stage / "usr/lib/pronk-sysext/gstreamer-va.toml"
+    metadata.parent.mkdir(parents=True, exist_ok=True)
+    metadata.write_text(config_path.read_text() +
+                        f'build_identity = "{identity.hexdigest()}"\n')
+
+
+def main() -> None:
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("state", type=pathlib.Path)
+    parser.add_argument("stage", type=pathlib.Path)
+    parser.add_argument("--run-tests", action="store_true",
+                        help="run encoder regressions when VA hardware is available")
+    args = parser.parse_args()
+    state, stage = args.state.resolve(), args.stage.resolve()
+    state.mkdir(parents=True, exist_ok=True)
+    with (state / ".gstreamer-va.lock").open("a") as lock:
+        fcntl.flock(lock, fcntl.LOCK_EX)
+        build(state, stage, args.run_tests)
+
+
+if __name__ == "__main__":
+    main()
